@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: cross-org-talent-manager
+server:
+  port: 8123
+  servlet:
+    context-path: /api
+# springdoc-openapi
+springdoc:
+  group-configs:
+    - group: 'default'
+      packages-to-scan: com.crossorgtalentmanager.controller
+# knife4j
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
