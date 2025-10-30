@@ -1,6 +1,13 @@
 spring:
   application:
     name: cross-org-talent-manager
+  # mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/cross_org_talent_manager
+    username: root
+    password: a600523
+
 server:
   port: 8123
   servlet:

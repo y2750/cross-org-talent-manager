@@ -1,5 +1,9 @@
 autoDetectedPackages:
 - com.crossorgtalentmanager
+- model.dto.user
+- model.entity
+- model.enums
+- model.vo
 enableAutoDetect: true
 entryDisplayConfig:
   excludedPathPatterns: []
