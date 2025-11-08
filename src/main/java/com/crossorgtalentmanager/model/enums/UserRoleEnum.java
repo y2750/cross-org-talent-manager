@@ -1,4 +1,4 @@
-package model.enums;
+package com.crossorgtalentmanager.model.enums;
 
 import cn.hutool.core.util.ObjUtil;
 import lombok.Getter;

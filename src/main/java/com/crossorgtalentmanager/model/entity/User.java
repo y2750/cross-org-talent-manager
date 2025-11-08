@@ -1,4 +1,4 @@
-package model.entity;
+package com.crossorgtalentmanager.model.entity;
 
 import com.mybatisflex.annotation.Id;
 import com.mybatisflex.annotation.KeyType;

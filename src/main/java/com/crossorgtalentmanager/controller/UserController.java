@@ -12,14 +12,13 @@ import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.mybatisflex.core.paginate.Page;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
-import model.dto.user.UserLoginRequest;
-import model.dto.user.UserQueryRequest;
-import model.dto.user.UserRegisterRequest;
-import model.dto.user.UserUpdateRequest;
-import model.entity.User;
-import model.enums.UserRoleEnum;
-import model.vo.LoginUserVO;
-import model.vo.UserVO;
+import com.crossorgtalentmanager.model.dto.user.UserLoginRequest;
+import com.crossorgtalentmanager.model.dto.user.UserQueryRequest;
+import com.crossorgtalentmanager.model.dto.user.UserRegisterRequest;
+import com.crossorgtalentmanager.model.dto.user.UserUpdateRequest;
+import com.crossorgtalentmanager.model.entity.User;
+import com.crossorgtalentmanager.model.vo.LoginUserVO;
+import com.crossorgtalentmanager.model.vo.UserVO;
 import org.springframework.web.bind.annotation.*;
 import com.crossorgtalentmanager.service.UserService;
 
@@ -50,10 +49,9 @@ public class UserController {
         String userAccount = userRegisterRequest.getUsername();
         String userRole = userRegisterRequest.getUserRole();
         String nickname = userRegisterRequest.getNickname();
-        String companyId = userRegisterRequest.getCompanyId();
         String userPassword = userRegisterRequest.getPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
-        long result = userService.userRegister(userAccount, userRole, nickname, companyId, userPassword, checkPassword);
+        long result = userService.userRegister(userAccount, userRole, nickname, userPassword, checkPassword);
         return ResultUtils.success(result);
     }
 
@@ -102,11 +100,11 @@ public class UserController {
     }
 
     /**
-     * 删除用户
+     * 启用或禁用用户
      */
-    @PostMapping("/delete")
+    @PostMapping("/toggle")
     @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Boolean> deleteUser(@RequestBody DeleteRequest deleteRequest) {
+    public BaseResponse<Boolean> toggleUserStatus(@RequestBody DeleteRequest deleteRequest) {
         if (deleteRequest == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
@@ -149,6 +147,7 @@ public class UserController {
         userVOPage.setRecords(userVOList);
         return ResultUtils.success(userVOPage);
     }
+
 
 
 

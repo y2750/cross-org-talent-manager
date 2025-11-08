@@ -5,16 +5,17 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.crossorgtalentmanager.exception.BusinessException;
 import com.crossorgtalentmanager.exception.ErrorCode;
+import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.servlet.http.HttpServletRequest;
-import model.dto.user.UserQueryRequest;
-import model.entity.User;
+import com.crossorgtalentmanager.model.dto.user.UserQueryRequest;
+import com.crossorgtalentmanager.model.entity.User;
 import com.crossorgtalentmanager.mapper.UserMapper;
 import com.crossorgtalentmanager.service.UserService;
-import model.enums.UserRoleEnum;
-import model.vo.LoginUserVO;
-import model.vo.UserVO;
+import com.crossorgtalentmanager.model.enums.UserRoleEnum;
+import com.crossorgtalentmanager.model.vo.LoginUserVO;
+import com.crossorgtalentmanager.model.vo.UserVO;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -31,20 +32,16 @@ import static com.crossorgtalentmanager.constant.UserConstant.USER_LOGIN_STATE;
  * @author <a href="https://github.com/y2750">y</a>
  */
 @Service
-public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements UserService{
+public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     @Override
-    public long userRegister(String username, String userRole, String nickname,String companyId, String password, String checkPassword) {
+    public long userRegister(String username, String userRole, String nickname, String password, String checkPassword) {
         // 1. 校验
         if (StrUtil.hasBlank(username, password, checkPassword, nickname)) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "参数为空");
         }
-        if(UserRoleEnum.getEnumByValue(userRole) == null) {
+        if (UserRoleEnum.getEnumByValue(userRole) == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户角色错误");
-        }
-        if(Objects.equals(UserRoleEnum.HR.getValue(), userRole)|| Objects.equals(UserRoleEnum.COMPANY_ADMIN.getValue(), userRole)) {
-            if(StrUtil.hasBlank(companyId))
-                throw new BusinessException(ErrorCode.PARAMS_ERROR, "公司ID为空");
         }
         if (username.length() < 4) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "用户账号过短");
@@ -70,10 +67,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements U
         user.setPassword(encryptPassword);
         user.setNickname(nickname);
         user.setUserRole(UserRoleEnum.getEnumByValue(userRole).getValue());
-        if (Objects.equals(UserRoleEnum.HR.getValue(), userRole) || Objects.equals(UserRoleEnum.COMPANY_ADMIN.getValue(), userRole)) {
-            user.setCompanyId(Long.valueOf(companyId));
-            //TODO: 检查公司是否存在
-        }
+
         boolean saveResult = this.save(user);
         if (!saveResult) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "注册失败，数据库错误");
@@ -196,5 +190,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User>  implements U
                 .orderBy(sortField, "ascend".equals(sortOrder));
     }
 
+    @Override
+    public Boolean removeById(Long id) {
+        // 尝试通过 getById 获取（正常未逻辑删除的用户）并切换 isDelete。
+        User user = null;
+        try {
+            user = getById(id);
+        } catch (Exception ignored) {
+        }
+
+        if (user != null) {
+            User deleteUser = new User();
+            BeanUtil.copyProperties(user, deleteUser);
+            deleteUser.setIsDelete(!Boolean.TRUE.equals(deleteUser.getIsDelete()));
+            return updateById(deleteUser);
+        } else {
+            // 记录可能存在但已被逻辑删除，直接调用 mapper 的原生 SQL 恢复
+            int affected = this.mapper.restoreById(id);
+            ThrowUtils.throwIf(affected <= 0, ErrorCode.NOT_FOUND_ERROR);
+            return affected > 0;
+        }
+    }
 
 }

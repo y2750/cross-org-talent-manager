@@ -3,10 +3,10 @@ package com.crossorgtalentmanager.service;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import jakarta.servlet.http.HttpServletRequest;
-import model.dto.user.UserQueryRequest;
-import model.entity.User;
-import model.vo.LoginUserVO;
-import model.vo.UserVO;
+import com.crossorgtalentmanager.model.dto.user.UserQueryRequest;
+import com.crossorgtalentmanager.model.entity.User;
+import com.crossorgtalentmanager.model.vo.LoginUserVO;
+import com.crossorgtalentmanager.model.vo.UserVO;
 
 import java.util.List;
 
@@ -26,7 +26,7 @@ public interface UserService extends IService<User> {
      * @param checkPassword 校验密码
      * @return 新用户 id
      */
-    long userRegister(String userAccount, String userRole, String nickname,String companyId, String userPassword, String checkPassword);
+    long userRegister(String userAccount, String userRole, String nickname, String userPassword, String checkPassword);
 
     String getEncryptPassword(String userPassword);
 
@@ -69,4 +69,6 @@ public interface UserService extends IService<User> {
     List<UserVO> getUserVOList(List<User> userList);
 
     QueryWrapper getQueryWrapper(UserQueryRequest userQueryRequest);
+
+    Boolean removeById(Long id);
 }

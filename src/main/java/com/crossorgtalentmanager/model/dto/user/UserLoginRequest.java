@@ -1,4 +1,4 @@
-package model.dto.user;
+package com.crossorgtalentmanager.model.dto.user;
 
 import lombok.Data;
 

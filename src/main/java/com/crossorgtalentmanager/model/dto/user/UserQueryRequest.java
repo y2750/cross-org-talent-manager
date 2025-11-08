@@ -1,4 +1,4 @@
-package model.dto.user;
+package com.crossorgtalentmanager.model.dto.user;
 
 import com.crossorgtalentmanager.common.PageRequest;
 import lombok.Data;
