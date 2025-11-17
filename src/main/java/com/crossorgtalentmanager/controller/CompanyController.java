@@ -13,7 +13,6 @@ import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.crossorgtalentmanager.model.dto.company.CompanyAddRequest;
 import com.mybatisflex.core.paginate.Page;
 import jakarta.annotation.Resource;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -37,6 +36,7 @@ public class CompanyController {
     private CompanyService companyService;
 
     @PostMapping("/add")
+    @AuthCheck(mustRole = UserConstant.COMPANY_ADMIN_ROLE)
     public BaseResponse<Long> addCompany(@RequestBody CompanyAddRequest companyAddRequest) {
         ThrowUtils.throwIf(companyAddRequest == null, ErrorCode.PARAMS_ERROR);
         String name = companyAddRequest.getName();

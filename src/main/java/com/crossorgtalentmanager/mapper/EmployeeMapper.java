@@ -1,0 +1,13 @@
+package com.crossorgtalentmanager.mapper;
+
+import com.mybatisflex.core.BaseMapper;
+import com.crossorgtalentmanager.model.entity.Employee;
+
+/**
+ * 员工基本信息 映射层。
+ *
+ * @author <a href="https://github.com/y2750">y</a>
+ */
+public interface EmployeeMapper extends BaseMapper<Employee> {
+
+}

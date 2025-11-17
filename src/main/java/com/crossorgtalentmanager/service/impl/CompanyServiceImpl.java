@@ -52,6 +52,10 @@ public class CompanyServiceImpl extends ServiceImpl<CompanyMapper, Company> impl
         company.setIndustry(industry);
         boolean result = this.save(company);
         ThrowUtils.throwIf(!result, ErrorCode.PARAMS_ERROR, "企业添加失败");
+        User user = new User();
+        user.setId(contactPersonId);
+        user.setCompanyId(company.getId());
+        userService.updateById(user);
         return company.getId();
     }
 
