@@ -159,7 +159,7 @@ public class EmployeeController {
     }
 
     /**
-     * 解雇员工（HR）: 将状态置为 false，公司ID 和 部门ID 置为 null
+     * 解雇员工（HR）: 将状态置为 false
      */
     @PostMapping("/fire")
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
@@ -171,8 +171,6 @@ public class EmployeeController {
         Employee employee = employeeService.getById(id);
         ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR);
         employee.setStatus(false);
-        employee.setCompanyId(null);
-        employee.setDepartmentId(null);
         boolean update = employeeService.updateById(employee);
         ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "解雇操作失败");
         return ResultUtils.success(true);

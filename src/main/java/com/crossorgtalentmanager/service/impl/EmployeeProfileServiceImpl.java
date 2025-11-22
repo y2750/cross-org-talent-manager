@@ -57,8 +57,21 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
 
         Long loginUserCompanyId = loginUser.getCompanyId();
         ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
-        ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
-                "员工所属公司与操作人员不一致");
+
+        // 验证逻辑：员工必须满足以下条件之一
+        // 1. 在职状态为 true（正常在职）且所属公司与操作人员一致
+        // 2. 在职状态为 false（离职）且所属公司与操作人员一致（允许为离职员工添加档案）
+        boolean isActiveEmployee = Boolean.TRUE.equals(employee.getStatus());
+        boolean isInactiveEmployeeInCompany = Boolean.FALSE.equals(employee.getStatus())
+                && loginUserCompanyId.equals(employee.getCompanyId());
+
+        if (isActiveEmployee) {
+            ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
+                    "员工所属公司与操作人员不一致");
+        } else {
+            ThrowUtils.throwIf(!isInactiveEmployeeInCompany, ErrorCode.NO_AUTH_ERROR,
+                    "离职员工不属于该公司，无法添加档案");
+        }
 
         EmployeeProfile profile = new EmployeeProfile();
         profile.setEmployeeId(addRequest.getEmployeeId());
@@ -93,6 +106,15 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
         ThrowUtils.throwIf(!loginUserCompanyId.equals(existingProfile.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
                 "档案所属公司与操作人员不一致");
+
+        // 验证逻辑：允许为离职员工（status=false）且属于该公司的员工更新档案
+        com.crossorgtalentmanager.model.entity.Employee employee = employeeService
+                .getById(existingProfile.getEmployeeId());
+        ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工信息不存在");
+        ThrowUtils.throwIf(Boolean.TRUE.equals(employee.getStatus()), ErrorCode.PARAMS_ERROR,
+                "在职员工不允许通过此接口更新档案");
+        ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
+                "员工所属公司与操作人员不一致");
 
         // 使用 DTO 的字段覆盖现有档案（null 值也会被覆盖）
         EmployeeProfile profileToUpdate = new EmployeeProfile();
