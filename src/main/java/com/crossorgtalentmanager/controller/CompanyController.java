@@ -1,10 +1,12 @@
 package com.crossorgtalentmanager.controller;
 
+import cn.hutool.json.JSONUtil;
 import com.crossorgtalentmanager.annotation.AuthCheck;
 import com.crossorgtalentmanager.common.DeleteRequest;
 import com.crossorgtalentmanager.constant.UserConstant;
 import com.crossorgtalentmanager.exception.BusinessException;
 import com.crossorgtalentmanager.model.dto.company.CompanyQueryRequest;
+import com.crossorgtalentmanager.model.dto.company.CompanyUpdateRequest;
 import com.crossorgtalentmanager.model.vo.CompanyVO;
 import com.crossorgtalentmanager.common.BaseResponse;
 import com.crossorgtalentmanager.common.ResultUtils;
@@ -21,7 +23,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.crossorgtalentmanager.model.entity.Company;
 import com.crossorgtalentmanager.service.CompanyService;
-
 
 /**
  * 企业信息管理 控制层。
@@ -43,8 +44,9 @@ public class CompanyController {
         Long contactPersonId = companyAddRequest.getContactPersonId();
         String phone = companyAddRequest.getPhone();
         String email = companyAddRequest.getEmail();
-        String industry = companyAddRequest.getIndustry();
-        long result = companyService.addCompany(name, contactPersonId, phone, email, industry);
+        String industryCategory = companyAddRequest.getIndustryCategory();
+        java.util.List<String> industries = companyAddRequest.getIndustries();
+        long result = companyService.addCompany(name, contactPersonId, phone, email, industryCategory, industries);
         return ResultUtils.success(result);
     }
 
@@ -65,8 +67,9 @@ public class CompanyController {
      */
     @GetMapping("/get/vo")
     public BaseResponse<CompanyVO> getCompanyVOById(long id) {
-        BaseResponse<Company> response = getCompanyById(id);
-        Company company = response.getData();
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
+        Company company = companyService.getById(id);
+        ThrowUtils.throwIf(company == null, ErrorCode.NOT_FOUND_ERROR);
         return ResultUtils.success(companyService.getCompanyVO(company));
     }
 
@@ -102,17 +105,45 @@ public class CompanyController {
         return ResultUtils.success(companyVOPage);
     }
 
-
     /**
      * 根据主键更新企业信息管理。
      *
-     * @param company 企业信息管理
+     * @param companyUpdateRequest 企业更新请求
      * @return {@code true} 更新成功，{@code false} 更新失败
      */
     @PutMapping("update")
-    public boolean update(@RequestBody Company company) {
-        return companyService.updateById(company);
-    }
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<Boolean> update(@RequestBody CompanyUpdateRequest companyUpdateRequest) {
+        ThrowUtils.throwIf(companyUpdateRequest == null || companyUpdateRequest.getId() == null,
+                ErrorCode.PARAMS_ERROR);
 
+        Company company = companyService.getById(companyUpdateRequest.getId());
+        ThrowUtils.throwIf(company == null, ErrorCode.NOT_FOUND_ERROR, "企业不存在");
+
+        // 更新基本信息
+        if (companyUpdateRequest.getName() != null) {
+            company.setName(companyUpdateRequest.getName());
+        }
+        if (companyUpdateRequest.getContactPersonId() != null) {
+            company.setContactPersonId(companyUpdateRequest.getContactPersonId());
+        }
+        if (companyUpdateRequest.getPhone() != null) {
+            company.setPhone(companyUpdateRequest.getPhone());
+        }
+        if (companyUpdateRequest.getEmail() != null) {
+            company.setEmail(companyUpdateRequest.getEmail());
+        }
+        if (companyUpdateRequest.getIndustryCategory() != null) {
+            company.setIndustryCategory(companyUpdateRequest.getIndustryCategory());
+        }
+        if (companyUpdateRequest.getIndustries() != null) {
+            // 将行业子类列表转换为JSON字符串存储
+            company.setIndustry(JSONUtil.toJsonStr(companyUpdateRequest.getIndustries()));
+        }
+
+        boolean result = companyService.updateById(company);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "更新失败");
+        return ResultUtils.success(true);
+    }
 
 }

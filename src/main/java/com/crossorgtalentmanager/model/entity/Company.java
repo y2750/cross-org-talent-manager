@@ -54,7 +54,12 @@ public class Company implements Serializable {
     private String email;
 
     /**
-     * 所属行业
+     * 行业大类
+     */
+    private String industryCategory;
+
+    /**
+     * 行业子类（JSON数组格式）
      */
     private String industry;
 

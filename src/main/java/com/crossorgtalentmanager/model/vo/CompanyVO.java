@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 public class CompanyVO implements Serializable {
@@ -20,7 +21,15 @@ public class CompanyVO implements Serializable {
 
     private String email;
 
-    private String industry;
+    /**
+     * 行业大类
+     */
+    private String industryCategory;
+
+    /**
+     * 行业子类列表
+     */
+    private List<String> industries;
 
     private LocalDateTime createTime;
 

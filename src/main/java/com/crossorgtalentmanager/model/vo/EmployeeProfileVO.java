@@ -60,4 +60,7 @@ public class EmployeeProfileVO implements Serializable {
 
     /** 操作人 ID */
     private Long operatorId;
+
+    /** 该公司的奖惩记录列表（仅用于员工查看自己的档案时） */
+    private java.util.List<com.crossorgtalentmanager.model.vo.RewardPunishmentVO> rewardPunishments;
 }

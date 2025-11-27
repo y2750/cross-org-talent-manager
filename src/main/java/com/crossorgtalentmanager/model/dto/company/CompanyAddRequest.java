@@ -3,6 +3,7 @@ package com.crossorgtalentmanager.model.dto.company;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * ClassName: CompanyAddRequest
@@ -39,8 +40,13 @@ public class CompanyAddRequest implements Serializable {
     private String email;
 
     /**
-     * 所属行业
+     * 行业大类
      */
-    private String industry;
+    private String industryCategory;
+
+    /**
+     * 行业子类列表
+     */
+    private List<String> industries;
 
 }

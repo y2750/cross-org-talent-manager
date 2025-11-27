@@ -50,4 +50,9 @@ public class EmployeeCreateRequest implements Serializable {
      */
     private Long departmentId;
 
+    /**
+     * 所属公司（仅管理员可指定，非管理员使用当前登录用户的公司）
+     */
+    private Long companyId;
+
 }

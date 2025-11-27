@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.io.Serializable;
+import java.util.List;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -26,9 +27,14 @@ public class CompanyQueryRequest extends PageRequest implements Serializable {
     private String contactPersonName;
 
     /**
-     * 行业
+     * 行业大类（用于筛选）
      */
-    private String industry;
+    private String industryCategory;
+
+    /**
+     * 行业子类列表（用于筛选，可以选择多个）
+     */
+    private List<String> industries;
 
     private static final long serialVersionUID = 1L;
 }

@@ -19,6 +19,7 @@ import com.crossorgtalentmanager.model.dto.user.UserUpdateRequest;
 import com.crossorgtalentmanager.model.entity.User;
 import com.crossorgtalentmanager.model.vo.LoginUserVO;
 import com.crossorgtalentmanager.model.vo.UserVO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import com.crossorgtalentmanager.service.UserService;
 
@@ -31,6 +32,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/user")
+@Slf4j
 public class UserController {
 
     @Resource
@@ -44,19 +46,36 @@ public class UserController {
      */
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
     @PostMapping("/register")
-    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest) {
+    public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest,
+            HttpServletRequest request) {
         ThrowUtils.throwIf(userRegisterRequest == null, ErrorCode.PARAMS_ERROR);
         String userAccount = userRegisterRequest.getUsername();
         String userRole = userRegisterRequest.getUserRole();
         String nickname = userRegisterRequest.getNickname();
         String userPassword = userRegisterRequest.getPassword();
         String checkPassword = userRegisterRequest.getCheckPassword();
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR);
         long result = userService.userRegister(userAccount, userRole, nickname, userPassword, checkPassword);
+        if (result > 0 && !loginUser.getUserRole().equals(UserConstant.ADMIN_ROLE)) {
+            // 非系统管理员注册的用户，设置所属公司
+            User newUser = new User();
+            newUser.setId(result);
+            newUser.setCompanyId(loginUser.getCompanyId());
+            userService.updateById(newUser);
+        }
+        if (userRegisterRequest.getCompanyId() != null) {
+            User newUser = new User();
+            newUser.setId(result);
+            newUser.setCompanyId(userRegisterRequest.getCompanyId());
+            userService.updateById(newUser);
+        }
         return ResultUtils.success(result);
     }
 
     @PostMapping("/login")
-    public BaseResponse<LoginUserVO> userLogin(@RequestBody UserLoginRequest userLoginRequest, HttpServletRequest request) {
+    public BaseResponse<LoginUserVO> userLogin(@RequestBody UserLoginRequest userLoginRequest,
+            HttpServletRequest request) {
         ThrowUtils.throwIf(userLoginRequest == null, ErrorCode.PARAMS_ERROR);
         String username = userLoginRequest.getUsername();
         String password = userLoginRequest.getPassword();
@@ -103,13 +122,36 @@ public class UserController {
      * 启用或禁用用户
      */
     @PostMapping("/toggle")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Boolean> toggleUserStatus(@RequestBody DeleteRequest deleteRequest) {
-        if (deleteRequest == null || deleteRequest.getId() <= 0) {
+    public BaseResponse<Boolean> toggleUserStatus(@RequestBody DeleteRequest deleteRequest,
+            HttpServletRequest request) {
+        log.info("toggleUserStatus: {}", deleteRequest);
+        if (deleteRequest == null || deleteRequest.getId() == null || deleteRequest.getId() <= 0) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR);
         }
-        boolean b = userService.removeById(deleteRequest.getId());
-        return ResultUtils.success(b);
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        boolean isSystemAdmin = UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+        boolean isCompanyAdmin = UserConstant.COMPANY_ADMIN_ROLE.equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(!isSystemAdmin && !isCompanyAdmin, ErrorCode.NO_AUTH_ERROR);
+
+        User targetUser = userService.getById(deleteRequest.getId());
+        ThrowUtils.throwIf(targetUser == null, ErrorCode.NOT_FOUND_ERROR);
+
+        if (isCompanyAdmin) {
+            ThrowUtils.throwIf(!UserConstant.HR_ROLE.equals(targetUser.getUserRole()),
+                    ErrorCode.NO_AUTH_ERROR, "仅可管理 HR 用户");
+            ThrowUtils.throwIf(targetUser.getCompanyId() == null
+                    || !targetUser.getCompanyId().equals(loginUser.getCompanyId()),
+                    ErrorCode.NO_AUTH_ERROR, "仅可管理本公司 HR");
+        }
+
+        User updateUser = new User();
+        updateUser.setId(targetUser.getId());
+        Boolean currentDeleteStatus = Boolean.TRUE.equals(targetUser.getIsDelete());
+        updateUser.setIsDelete(!currentDeleteStatus);
+        boolean result = userService.updateById(updateUser);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
     }
 
     /**
@@ -134,23 +176,27 @@ public class UserController {
      * @param userQueryRequest 查询请求参数
      */
     @PostMapping("/list/page/vo")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
-    public BaseResponse<Page<UserVO>> listUserVOByPage(@RequestBody UserQueryRequest userQueryRequest) {
+    @AuthCheck(mustRole = UserConstant.COMPANY_ADMIN_ROLE)
+    public BaseResponse<Page<UserVO>> listUserVOByPage(@RequestBody UserQueryRequest userQueryRequest,
+            HttpServletRequest request) {
         ThrowUtils.throwIf(userQueryRequest == null, ErrorCode.PARAMS_ERROR);
+        log.info("userQueryRequest: {}", userQueryRequest);
         long pageNum = userQueryRequest.getPageNum();
         long pageSize = userQueryRequest.getPageSize();
+        User loginUser = userService.getLoginUser(request);
+        if (loginUser.getUserRole().equals(UserConstant.COMPANY_ADMIN_ROLE)) {
+            log.info("公司管理员只能查看本公司用户，companyId={}", loginUser.getCompanyId());
+            // 公司管理员只能查看本公司用户
+            userQueryRequest.setCompanyId(loginUser.getCompanyId());
+        }
         Page<User> userPage = userService.page(Page.of(pageNum, pageSize),
                 userService.getQueryWrapper(userQueryRequest));
         // 数据脱敏
         Page<UserVO> userVOPage = new Page<>(pageNum, pageSize, userPage.getTotalRow());
         List<UserVO> userVOList = userService.getUserVOList(userPage.getRecords());
         userVOPage.setRecords(userVOList);
+        log.info("userVOPage: {}", userVOPage);
         return ResultUtils.success(userVOPage);
     }
 
-
-
-
 }
-
-

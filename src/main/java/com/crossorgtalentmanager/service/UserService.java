@@ -21,7 +21,7 @@ public interface UserService extends IService<User> {
      * 用户注册
      *
      * @param userAccount   用户账户
-     * @param userRole          用户类型
+     * @param userRole      用户类型
      * @param userPassword  用户密码
      * @param checkPassword 校验密码
      * @return 新用户 id
@@ -62,7 +62,6 @@ public interface UserService extends IService<User> {
      * @return
      */
     boolean userLogout(HttpServletRequest request);
-
 
     UserVO getUserVO(User user);
 

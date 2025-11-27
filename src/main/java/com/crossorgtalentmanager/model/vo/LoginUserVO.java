@@ -24,6 +24,11 @@ public class LoginUserVO implements Serializable {
     private String nickname;
 
     /**
+     * 所属公司
+     */
+    private Long companyId;
+
+    /**
      * 用户角色
      */
     private String userRole;

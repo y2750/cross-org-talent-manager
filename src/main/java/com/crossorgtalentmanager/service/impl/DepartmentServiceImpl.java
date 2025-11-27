@@ -7,9 +7,11 @@ import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.crossorgtalentmanager.model.dto.department.DepartmentQueryRequest;
 import com.crossorgtalentmanager.model.entity.Company;
 import com.crossorgtalentmanager.model.entity.User;
+import com.crossorgtalentmanager.model.entity.Employee;
 import com.crossorgtalentmanager.model.vo.DepartmentVO;
 import com.crossorgtalentmanager.service.CompanyService;
 import com.crossorgtalentmanager.service.UserService;
+import com.crossorgtalentmanager.service.EmployeeService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.crossorgtalentmanager.model.entity.Department;
@@ -17,6 +19,7 @@ import com.crossorgtalentmanager.mapper.DepartmentMapper;
 import com.crossorgtalentmanager.service.DepartmentService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,13 +41,17 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
     @Resource
     private UserService userService;
 
+    @Resource
+    @Lazy
+    private EmployeeService employeeService;
+
     @Override
     public Long addDepartment(String name, Long companyId, Long leaderId) {
         ThrowUtils.throwIf(name == null || companyId == null || leaderId == null, ErrorCode.PARAMS_ERROR, "参数不能为空");
 
         Company company = companyService.getById(companyId);
         ThrowUtils.throwIf(company == null, ErrorCode.PARAMS_ERROR, "公司不存在");
-        //todo：后期修改为在emplyee表中查找
+        // todo：后期修改为在emplyee表中查找
         User leader = userService.getById(leaderId);
         ThrowUtils.throwIf(leader == null, ErrorCode.PARAMS_ERROR, "部门领导不存在");
 
@@ -106,9 +113,9 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
                 .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toSet());
 
-        // 批量查询企业和用户信息
+        // 批量查询企业和员工信息
         java.util.Map<Long, String> companyIdToName = new java.util.HashMap<>();
-        java.util.Map<Long, String> userIdToNickname = new java.util.HashMap<>();
+        java.util.Map<Long, String> employeeIdToName = new java.util.HashMap<>();
 
         if (!companyIds.isEmpty()) {
             List<Company> companies = companyService.listByIds(companyIds);
@@ -117,11 +124,12 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
                     .collect(Collectors.toMap(Company::getId, Company::getName, (a, b) -> a));
         }
 
+        // leaderId 是 Employee 的ID，不是 User 的ID
         if (!leaderIds.isEmpty()) {
-            List<User> users = userService.listByIds(leaderIds);
-            userIdToNickname = users.stream()
+            List<Employee> employees = employeeService.listByIds(leaderIds);
+            employeeIdToName = employees.stream()
                     .filter(java.util.Objects::nonNull)
-                    .collect(Collectors.toMap(User::getId, User::getNickname, (a, b) -> a));
+                    .collect(Collectors.toMap(Employee::getId, Employee::getName, (a, b) -> a));
         }
 
         // 填充企业名称和领导名称
@@ -130,7 +138,7 @@ public class DepartmentServiceImpl extends ServiceImpl<DepartmentMapper, Departm
                 vo.setCompanyName(companyIdToName.get(vo.getCompanyId()));
             }
             if (vo.getLeaderId() != null) {
-                vo.setLeaderName(userIdToNickname.get(vo.getLeaderId()));
+                vo.setLeaderName(employeeIdToName.get(vo.getLeaderId()));
             }
         }
 

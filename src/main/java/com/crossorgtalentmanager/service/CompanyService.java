@@ -15,7 +15,7 @@ import java.util.List;
  */
 public interface CompanyService extends IService<Company> {
 
-    long addCompany(String name, Long contactPersonId, String phone, String email, String industry);
+    long addCompany(String name, Long contactPersonId, String phone, String email, String industryCategory, List<String> industries);
 
     CompanyVO getCompanyVO(Company company);
 

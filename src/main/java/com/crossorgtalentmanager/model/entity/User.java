@@ -1,5 +1,6 @@
 package com.crossorgtalentmanager.model.entity;
 
+import com.mybatisflex.annotation.Column;
 import com.mybatisflex.annotation.Id;
 import com.mybatisflex.annotation.KeyType;
 import com.mybatisflex.annotation.Table;
@@ -45,6 +46,7 @@ public class User implements Serializable {
     /**
      * 用户角色
      */
+    @Column("user_role")
     private String userRole;
 
     /**
@@ -55,12 +57,16 @@ public class User implements Serializable {
     /**
      * 所属企业
      */
+    @Column("company_id")
     private Long companyId;
 
+    @Column("create_time")
     private LocalDateTime createTime;
 
+    @Column("update_time")
     private LocalDateTime updateTime;
 
+    @Column("is_delete")
     private Boolean isDelete;
 
 }

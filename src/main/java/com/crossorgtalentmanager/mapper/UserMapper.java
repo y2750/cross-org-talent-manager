@@ -21,4 +21,11 @@ public interface UserMapper extends BaseMapper<User> {
     @Update("UPDATE user SET is_delete = 0 WHERE id = #{id}")
     int restoreById(@Param("id") Long id);
 
+    /**
+     * 物理删除指定 id 的用户记录（直接删除，不进行逻辑删除）。
+     * 返回受影响的行数。
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM user WHERE id = #{id}")
+    int deleteByIdPhysically(@Param("id") Long id);
+
 }

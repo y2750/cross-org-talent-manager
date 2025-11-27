@@ -34,6 +34,11 @@ public class UserVO implements Serializable {
     private String userRole;
 
     /**
+     * 用户状态
+     */
+    private Boolean isDelete;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createTime;

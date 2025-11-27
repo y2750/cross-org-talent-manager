@@ -19,6 +19,9 @@ public class EmployeeProfileAddRequest implements Serializable {
     /** 员工 ID */
     private Long employeeId;
 
+    /** 公司 ID（管理员可指定，非管理员忽略此字段） */
+    private Long companyId;
+
     /** 入职日期 */
     private Date startDate;
 

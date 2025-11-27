@@ -21,4 +21,10 @@ public interface DepartmentMapper extends BaseMapper<Department> {
     @Update("UPDATE department SET is_delete = 0 WHERE id = #{id}")
     int restoreById(@Param("id") Long id);
 
+    /**
+     * 将指定员工作为主管的所有部门的 leaderId 置为 null（解雇员工时使用）
+     */
+    @Update("UPDATE department SET leader_id = NULL WHERE leader_id = #{employeeId}")
+    int clearLeaderIdByEmployeeId(@Param("employeeId") Long employeeId);
+
 }

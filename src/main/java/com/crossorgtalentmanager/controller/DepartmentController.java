@@ -110,7 +110,7 @@ public class DepartmentController {
      * 更新部门信息（仅管理员）
      */
     @PutMapping("update")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
     public BaseResponse<Boolean> updateDepartment(@RequestBody Department department) {
         ThrowUtils.throwIf(department == null || department.getId() == null, ErrorCode.PARAMS_ERROR);
         boolean result = departmentService.updateById(department);
@@ -119,15 +119,36 @@ public class DepartmentController {
     }
 
     /**
-     * 分页获取部门封装列表（仅管理员）
+     * 分页获取部门封装列表
+     * 系统管理员(admin)：返回所有部门列表
+     * 公司管理员(company_admin)和HR：返回本公司的部门列表
      *
      * @param departmentQueryRequest 查询请求参数
      */
     @PostMapping("/list/page/vo")
-    @AuthCheck(mustRole = UserConstant.ADMIN_ROLE)
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
     public BaseResponse<Page<DepartmentVO>> listDepartmentVOByPage(
-            @RequestBody DepartmentQueryRequest departmentQueryRequest) {
+            @RequestBody DepartmentQueryRequest departmentQueryRequest,
+            HttpServletRequest request) {
         ThrowUtils.throwIf(departmentQueryRequest == null, ErrorCode.PARAMS_ERROR);
+
+        // 获取登录用户信息
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "未登录");
+
+        // 根据用户角色决定是否过滤 companyId
+        String userRole = loginUser.getUserRole();
+        boolean isAdmin = UserConstant.ADMIN_ROLE.equals(userRole);
+
+        // 如果不是系统管理员，则限制为本公司的部门
+        if (!isAdmin) {
+            Long loginCompanyId = loginUser.getCompanyId();
+            ThrowUtils.throwIf(loginCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
+            // 强制设置查询条件为本公司
+            departmentQueryRequest.setCompanyId(loginCompanyId);
+        }
+        // 系统管理员不限制 companyId，可以查看所有部门
+
         long pageNum = departmentQueryRequest.getPageNum();
         long pageSize = departmentQueryRequest.getPageSize();
         Page<Department> departmentPage = departmentService.page(
@@ -175,6 +196,9 @@ public class DepartmentController {
             ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
             ThrowUtils.throwIf(employee.getCompanyId() == null || !employee.getCompanyId().equals(loginCompanyId),
                     ErrorCode.NO_AUTH_ERROR, "员工不属于本公司");
+            // 验证员工是否属于该部门
+            ThrowUtils.throwIf(employee.getDepartmentId() == null || !employee.getDepartmentId().equals(departmentId),
+                    ErrorCode.PARAMS_ERROR, "员工不属于该部门，无法设置为主管");
 
             // 将部门主管设置为该员工的 ID
             department.setLeaderId(employeeId);

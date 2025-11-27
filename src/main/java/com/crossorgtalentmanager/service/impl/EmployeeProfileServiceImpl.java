@@ -9,6 +9,7 @@ import com.crossorgtalentmanager.model.dto.employeeprofile.EmployeeProfileQueryR
 import com.crossorgtalentmanager.model.dto.employeeprofile.EmployeeProfileUpdateRequest;
 import com.crossorgtalentmanager.model.entity.EmployeeProfile;
 import com.crossorgtalentmanager.model.entity.User;
+import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 import com.crossorgtalentmanager.model.vo.EmployeeProfileVO;
 import com.crossorgtalentmanager.service.EmployeeProfileService;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -51,31 +52,36 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         ThrowUtils.throwIf(addRequest.getEmployeeId() == null || addRequest.getEmployeeId() <= 0,
                 ErrorCode.PARAMS_ERROR, "员工 ID 不能为空");
 
-        // 查询员工信息并校验其公司 ID 与操作人员的公司 ID 是否一致
+        // 查询员工信息
         com.crossorgtalentmanager.model.entity.Employee employee = employeeService.getById(addRequest.getEmployeeId());
         ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
 
-        Long loginUserCompanyId = loginUser.getCompanyId();
-        ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
+        // 权限校验：管理员可以添加任何人的任何档案（可指定公司），公司管理员/HR只能添加本公司员工在本公司产生的档案
+        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        Long profileCompanyId;
 
-        // 验证逻辑：员工必须满足以下条件之一
-        // 1. 在职状态为 true（正常在职）且所属公司与操作人员一致
-        // 2. 在职状态为 false（离职）且所属公司与操作人员一致（允许为离职员工添加档案）
-        boolean isActiveEmployee = Boolean.TRUE.equals(employee.getStatus());
-        boolean isInactiveEmployeeInCompany = Boolean.FALSE.equals(employee.getStatus())
-                && loginUserCompanyId.equals(employee.getCompanyId());
-
-        if (isActiveEmployee) {
-            ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
-                    "员工所属公司与操作人员不一致");
+        if (isAdmin) {
+            // 管理员：必须指定公司ID（因为离职员工可能没有companyId）
+            ThrowUtils.throwIf(addRequest.getCompanyId() == null || addRequest.getCompanyId() <= 0,
+                    ErrorCode.PARAMS_ERROR, "管理员添加档案时必须指定所属公司");
+            // 验证指定的公司是否存在
+            com.crossorgtalentmanager.model.entity.Company company = companyService
+                    .getById(addRequest.getCompanyId());
+            ThrowUtils.throwIf(company == null, ErrorCode.NOT_FOUND_ERROR, "指定的公司不存在");
+            profileCompanyId = addRequest.getCompanyId();
         } else {
-            ThrowUtils.throwIf(!isInactiveEmployeeInCompany, ErrorCode.NO_AUTH_ERROR,
-                    "离职员工不属于该公司，无法添加档案");
+            // 非管理员：必须使用操作人员的公司，且员工必须属于该公司
+            Long loginUserCompanyId = loginUser.getCompanyId();
+            ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
+            ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()),
+                    ErrorCode.NO_AUTH_ERROR, "员工所属公司与操作人员不一致");
+            profileCompanyId = loginUserCompanyId;
         }
 
+        // 创建档案
         EmployeeProfile profile = new EmployeeProfile();
         profile.setEmployeeId(addRequest.getEmployeeId());
-        profile.setCompanyId(loginUserCompanyId);
+        profile.setCompanyId(profileCompanyId);
         profile.setStartDate(addRequest.getStartDate());
         profile.setEndDate(addRequest.getEndDate());
         profile.setPerformanceSummary(addRequest.getPerformanceSummary());
@@ -101,20 +107,24 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         EmployeeProfile existingProfile = this.getById(updateRequest.getId());
         ThrowUtils.throwIf(existingProfile == null, ErrorCode.NOT_FOUND_ERROR, "档案不存在");
 
-        // 校验档案所属公司与操作人员公司是否一致
-        Long loginUserCompanyId = loginUser.getCompanyId();
-        ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
-        ThrowUtils.throwIf(!loginUserCompanyId.equals(existingProfile.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
-                "档案所属公司与操作人员不一致");
+        // 权限校验：管理员可以更新任何档案，公司管理员/HR只能更新本公司员工在本公司产生的档案
+        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        if (!isAdmin) {
+            // 非管理员需要校验公司权限
+            Long loginUserCompanyId = loginUser.getCompanyId();
+            ThrowUtils.throwIf(loginUserCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
 
-        // 验证逻辑：允许为离职员工（status=false）且属于该公司的员工更新档案
-        com.crossorgtalentmanager.model.entity.Employee employee = employeeService
-                .getById(existingProfile.getEmployeeId());
-        ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工信息不存在");
-        ThrowUtils.throwIf(Boolean.TRUE.equals(employee.getStatus()), ErrorCode.PARAMS_ERROR,
-                "在职员工不允许通过此接口更新档案");
-        ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()), ErrorCode.NO_AUTH_ERROR,
-                "员工所属公司与操作人员不一致");
+            // 校验档案所属公司必须与操作人员一致
+            ThrowUtils.throwIf(!loginUserCompanyId.equals(existingProfile.getCompanyId()),
+                    ErrorCode.NO_AUTH_ERROR, "档案所属公司与操作人员不一致");
+
+            // 查询员工信息，校验员工所属公司必须与操作人员一致
+            com.crossorgtalentmanager.model.entity.Employee employee = employeeService
+                    .getById(existingProfile.getEmployeeId());
+            ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工信息不存在");
+            ThrowUtils.throwIf(!loginUserCompanyId.equals(employee.getCompanyId()),
+                    ErrorCode.NO_AUTH_ERROR, "员工所属公司与操作人员不一致");
+        }
 
         // 使用 DTO 的字段覆盖现有档案（null 值也会被覆盖）
         EmployeeProfile profileToUpdate = new EmployeeProfile();

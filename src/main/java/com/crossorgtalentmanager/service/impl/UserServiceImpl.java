@@ -16,6 +16,7 @@ import com.crossorgtalentmanager.service.UserService;
 import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 import com.crossorgtalentmanager.model.vo.LoginUserVO;
 import com.crossorgtalentmanager.model.vo.UserVO;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.DigestUtils;
 
@@ -30,7 +31,8 @@ import static com.crossorgtalentmanager.constant.UserConstant.USER_LOGIN_STATE;
  *
  * @author <a href="https://github.com/y2750">y</a>
  */
-@Service
+@Service("userService")
+@Slf4j
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     @Override
@@ -180,13 +182,40 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         String userRole = userQueryRequest.getUserRole();
         String sortField = userQueryRequest.getSortField();
         String sortOrder = userQueryRequest.getSortOrder();
+
+        // 字段名映射：Java字段名 -> 数据库列名
+        String dbSortField = mapToDatabaseColumn(sortField);
+
         return QueryWrapper.create()
                 .eq("id", id)
                 .eq("user_role", userRole)
                 .like("username", username)
                 .like("nickname", nickname)
-                .like("company_id", companyId)
-                .orderBy(sortField, "ascend".equals(sortOrder));
+                .eq("company_id", companyId)
+                .orderBy(dbSortField, "ascend".equals(sortOrder));
+    }
+
+    /**
+     * 将Java字段名映射为数据库列名
+     */
+    private String mapToDatabaseColumn(String javaFieldName) {
+        if (javaFieldName == null) {
+            return null;
+        }
+        switch (javaFieldName) {
+            case "createTime":
+                return "create_time";
+            case "updateTime":
+                return "update_time";
+            case "userRole":
+                return "user_role";
+            case "companyId":
+                return "company_id";
+            case "isDelete":
+                return "is_delete";
+            default:
+                return javaFieldName; // 对于其他字段，直接使用原名
+        }
     }
 
     @Override
