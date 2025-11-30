@@ -5,6 +5,24 @@ declare namespace API {
     message?: string
   }
 
+  type BaseResponseInteger = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  type BaseResponseLong = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  type BaseResponsePageEvaluationTaskVO = {
+    code?: number
+    data?: PageEvaluationTaskVO
+    message?: string
+  }
+
   type BaseResponseCompany = {
     code?: number
     data?: Company
@@ -62,6 +80,12 @@ declare namespace API {
   type BaseResponseListRewardPunishment = {
     code?: number
     data?: RewardPunishment[]
+    message?: string
+  }
+
+  type BaseResponseListEvaluationTagVO = {
+    code?: number
+    data?: EvaluationTagVO[]
     message?: string
   }
 
@@ -599,5 +623,243 @@ declare namespace API {
     userRole?: string
     isDelete?: boolean
     createTime?: string
+  }
+
+  // 评价相关类型
+  type BaseResponseEvaluationDetailVO = {
+    code?: number
+    data?: EvaluationDetailVO
+    message?: string
+  }
+
+  type BaseResponseEvaluationStatisticsVO = {
+    code?: number
+    data?: EvaluationStatisticsVO
+    message?: string
+  }
+
+  type BaseResponseEvaluationVO = {
+    code?: number
+    data?: EvaluationVO
+    message?: string
+  }
+
+  type BaseResponseListLong = {
+    code?: number
+    data?: number[]
+    message?: string
+  }
+
+  type BaseResponsePageEvaluationVO = {
+    code?: number
+    data?: PageEvaluationVO
+    message?: string
+  }
+
+  type DimensionScoreRequest = {
+    dimensionId?: number
+    score?: number
+  }
+
+  type EvaluationAddRequest = {
+    employeeId?: number
+    comment?: string
+    evaluationDate?: string
+    evaluationType?: number
+    evaluationPeriod?: number
+    periodYear?: number
+    periodQuarter?: number
+    dimensionScores?: DimensionScoreRequest[]
+    tagIds?: number[]
+  }
+
+  type EvaluationColleagueRequest = {
+    employeeId?: number
+    comment?: string
+    dimensionScores?: DimensionScoreRequest[]
+    tagIds?: number[]
+  }
+
+  type EvaluationDetailVO = {
+    id?: number
+    employeeId?: number
+    employeeName?: string
+    evaluatorId?: number
+    evaluatorName?: string
+    comment?: string
+    evaluationDate?: string
+    evaluationType?: number
+    evaluationTypeText?: string
+    evaluationPeriod?: number
+    evaluationPeriodText?: string
+    periodYear?: number
+    periodQuarter?: number
+    dimensionScores?: DimensionScoreVO[]
+    tags?: TagVO[]
+    averageDimensionScore?: number
+  }
+
+  type EvaluationDimensionScore = {
+    id?: number
+    evaluationId?: number
+    dimensionId?: number
+    score?: number
+    createTime?: string
+  }
+
+  type EvaluationQueryRequest = {
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+    employeeId?: number
+    evaluatorId?: number
+    evaluationType?: number
+    evaluationPeriod?: number
+    periodYear?: number
+    periodQuarter?: number
+  }
+
+  type EvaluationStatisticsVO = {
+    employeeId?: number
+    employeeName?: string
+    totalCount?: number
+    countByType?: Record<string, number>
+    countByPeriod?: Record<string, number>
+    averageDimensionScores?: Record<string, number>
+    quarterlyTrends?: QuarterlyTrend[]
+  }
+
+  type EvaluationUpdateRequest = {
+    id?: number
+    comment?: string
+    dimensionScores?: DimensionScoreRequest[]
+    tagIds?: number[]
+  }
+
+  type EvaluationTagVO = {
+    id?: number
+    name?: string
+    type?: number
+    description?: string
+    sortOrder?: number
+    isActive?: boolean
+  }
+
+  type EvaluationVO = {
+    id?: number
+    employeeId?: number
+    employeeName?: string
+    evaluatorId?: number
+    evaluatorName?: string
+    comment?: string
+    evaluationDate?: string
+    evaluationType?: number
+    evaluationTypeText?: string
+    evaluationPeriod?: number
+    evaluationPeriodText?: string
+    periodYear?: number
+    periodQuarter?: number
+    dimensionScores?: DimensionScoreVO[]
+    tags?: TagVO[]
+  }
+
+  type EvaluationDimensionScoreVO = {
+    dimensionId?: number
+    dimensionName?: string
+    averageScore?: number
+  }
+
+  type EvaluationTagStatisticsVO = {
+    tagId?: number
+    tagName?: string
+    tagType?: number
+    count?: number
+  }
+
+  type BaseResponseListEvaluationDimensionScoreVO = {
+    code?: number
+    data?: EvaluationDimensionScoreVO[]
+    message?: string
+  }
+
+  type DimensionScoreVO = {
+    dimensionId?: number
+    dimensionName?: string
+    score?: number
+  }
+
+  type TagVO = {
+    tagId?: number
+    tagName?: string
+    tagType?: number
+  }
+
+  type PageEvaluationVO = {
+    records?: EvaluationVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  // 评价任务相关类型
+  type EvaluationTaskCreateRequest = {
+    employeeIds?: number[]
+    employeeId?: number
+    evaluationType?: number
+    evaluationPeriod?: number
+    periodYear?: number
+    periodQuarter?: number
+    deadline?: string
+  }
+
+  type EvaluationTaskQueryRequest = {
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+    employeeId?: number
+    evaluatorId?: number
+    evaluationType?: number
+    evaluationPeriod?: number
+    status?: number
+    periodYear?: number
+    periodQuarter?: number
+  }
+
+  type EvaluationTaskVO = {
+    id?: number
+    employeeId?: number
+    employeeName?: string
+    departmentName?: string
+    isLeader?: boolean
+    evaluatorId?: number
+    evaluatorName?: string
+    evaluationType?: number
+    evaluationTypeText?: string
+    evaluationPeriod?: number
+    evaluationPeriodText?: string
+    periodYear?: number
+    periodQuarter?: number
+    status?: number
+    statusText?: string
+    deadline?: string
+    evaluationId?: number
+    createTime?: string
+  }
+
+  type PageEvaluationTaskVO = {
+    records?: EvaluationTaskVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type QuarterlyTrend = {
+    year?: number
+    quarter?: number
+    averageScore?: number
   }
 }

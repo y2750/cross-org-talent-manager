@@ -100,6 +100,24 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/UpdateProfileView.vue'),
     meta: { requiresAuth: true, roles: ['employee'] },
   },
+  {
+    path: '/evaluation/tasks',
+    name: 'evaluationTasks',
+    component: () => import('../views/EvaluationTaskView.vue'),
+    meta: { requiresAuth: true, roles: ['hr', 'employee', 'admin'] },
+  },
+  {
+    path: '/evaluation/my',
+    name: 'myEvaluation',
+    component: () => import('../views/MyEvaluationView.vue'),
+    meta: { requiresAuth: true, roles: ['employee'] },
+  },
+  {
+    path: '/evaluation/create-quarterly',
+    name: 'createQuarterlyEvaluation',
+    component: () => import('../views/CreateQuarterlyEvaluationView.vue'),
+    meta: { requiresAuth: true, roles: ['employee', 'hr', 'admin'] },
+  },
 ]
 
 const router = createRouter({

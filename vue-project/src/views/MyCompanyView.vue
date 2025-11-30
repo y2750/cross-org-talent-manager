@@ -35,11 +35,32 @@ const fetchMyEmployeeInfo = async () => {
     const result = await employeeController.getMyEmployeeVo()
     if (result?.data?.code === 0 && result.data.data) {
       myEmployeeInfo.value = result.data.data
+      // 如果员工没有公司ID，说明可能处于离职状态
+      if (!myEmployeeInfo.value?.companyId) {
+        // 不显示错误信息，只显示"无公司"
+        return
+      }
     } else {
+      // 检查是否是离职状态（无公司）或未分配部门
+      const errorMessage = result?.data?.message || ''
+      if (errorMessage.includes('公司') || errorMessage.includes('离职') || 
+          errorMessage.includes('部门') || errorMessage.includes('未分配') ||
+          !result?.data?.data?.companyId) {
+        // 离职状态或未分配部门，不显示错误信息
+        return
+      }
       message.error('获取员工信息失败')
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch employee info:', error)
+    // 检查错误信息中是否包含公司、部门相关的内容
+    const errorMessage = error?.response?.data?.message || error?.message || ''
+    if (errorMessage.includes('公司') || errorMessage.includes('离职') || 
+        errorMessage.includes('部门') || errorMessage.includes('未分配') ||
+        errorMessage.includes('未找到')) {
+      // 可能是离职状态或未分配部门，不显示错误信息
+      return
+    }
     message.error('获取员工信息失败')
   } finally {
     employeeLoading.value = false
@@ -49,6 +70,7 @@ const fetchMyEmployeeInfo = async () => {
 // 获取公司信息
 const fetchCompanyInfo = async () => {
   if (!myEmployeeInfo.value?.companyId) {
+    // 员工处于离职状态，无公司信息
     return
   }
   try {
@@ -59,8 +81,9 @@ const fetchCompanyInfo = async () => {
     if (result?.data?.code === 0 && result.data.data) {
       companyInfo.value = result.data.data
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch company info:', error)
+    // 不显示后端错误信息，只显示"无公司"
   } finally {
     companyLoading.value = false
   }
@@ -69,6 +92,7 @@ const fetchCompanyInfo = async () => {
 // 获取部门信息
 const fetchDepartmentInfo = async () => {
   if (!myEmployeeInfo.value?.departmentId) {
+    // 员工未分配部门，不显示错误信息
     return
   }
   try {
@@ -88,8 +112,9 @@ const fetchDepartmentInfo = async () => {
         }
       }
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch department info:', error)
+    // 不显示后端错误信息（如"员工未分配部门"），只显示"无部门信息"
   } finally {
     departmentLoading.value = false
   }
@@ -127,10 +152,19 @@ const fetchColleagues = async () => {
         }
       }
     } else {
-      message.error('获取部门同事列表失败')
+      // 不显示错误信息，可能是员工未分配部门或离职状态
+      // 让模板显示"暂无部门同事"
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to fetch colleagues:', error)
+    // 检查错误信息中是否包含部门相关的内容
+    const errorMessage = error?.response?.data?.message || error?.message || ''
+    if (errorMessage.includes('部门') || errorMessage.includes('未分配') || errorMessage.includes('离职')) {
+      // 可能是员工未分配部门或离职状态，不显示错误信息
+      // 让模板显示"暂无部门同事"
+      return
+    }
+    // 其他错误才显示错误信息
     message.error('获取部门同事列表失败')
   } finally {
     colleaguesLoading.value = false

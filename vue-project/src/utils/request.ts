@@ -95,7 +95,25 @@ instance.interceptors.response.use(
         return Promise.reject(new Error(errorMsg))
       }
 
-      showError(errorMsg)
+      // 对于员工离职、未分配部门等业务状态，不显示错误提示
+      // 这些状态应该由页面静默处理，显示"无公司"、"无部门"等提示
+      const silentErrors = [
+        '员工未分配部门',
+        '未分配部门',
+        '未找到部门',
+        '员工未分配公司',
+        '未分配公司',
+        '未找到公司',
+        '离职',
+        '员工已离职',
+      ]
+      
+      const shouldSilent = silentErrors.some(keyword => errorMsg.includes(keyword))
+      
+      if (!shouldSilent) {
+        showError(errorMsg)
+      }
+      
       return Promise.reject(new Error(errorMsg))
     }
 

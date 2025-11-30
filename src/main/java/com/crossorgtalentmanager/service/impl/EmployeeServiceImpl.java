@@ -13,6 +13,7 @@ import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 import com.crossorgtalentmanager.model.vo.EmployeeVO;
 import com.crossorgtalentmanager.service.CompanyService;
 import com.crossorgtalentmanager.service.DepartmentService;
+import com.crossorgtalentmanager.service.EvaluationService;
 import com.crossorgtalentmanager.service.UserService;
 import com.mybatisflex.core.update.UpdateChain;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -23,7 +24,9 @@ import com.crossorgtalentmanager.mapper.UserMapper;
 import com.crossorgtalentmanager.service.EmployeeService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -55,6 +58,10 @@ public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> i
 
     @Resource
     private CompanyService companyService;
+
+    @Resource
+    @Lazy
+    private EvaluationService evaluationService;
 
     final String DEFAULT_PASSWORD = "123456";
 
@@ -350,7 +357,7 @@ public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> i
     }
 
     @Override
-    @org.springframework.transaction.annotation.Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)
     public Boolean confirmFireEmployee(Long employeeId, com.crossorgtalentmanager.model.entity.User loginUser) {
         ThrowUtils.throwIf(employeeId == null || employeeId <= 0, ErrorCode.PARAMS_ERROR, "员工ID不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户信息不存在");
@@ -367,6 +374,17 @@ public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> i
             ThrowUtils.throwIf(loginCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
             ThrowUtils.throwIf(!loginCompanyId.equals(employee.getCompanyId()),
                     ErrorCode.NO_AUTH_ERROR, "只能解雇本公司员工");
+        }
+
+        // ⚠️ 关键：在解雇操作之前创建离职评价任务
+        // 因为解雇后员工可能就没有部门信息了，无法获取同部门同事
+        try {
+            evaluationService.createResignationEvaluationTasks(employeeId, loginUser);
+            log.info("为离职员工 {} 创建了评价任务", employeeId);
+        } catch (Exception e) {
+            log.error("创建离职评价任务失败，员工ID：{}", employeeId, e);
+            // 可以选择是否继续执行解雇操作，或者抛出异常
+            // 这里选择记录日志但继续执行，避免影响解雇流程
         }
 
         // 检查该员工是否是某个部门的主管，如果是，需要清除部门的主管设置

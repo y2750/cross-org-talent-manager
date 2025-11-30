@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, reactive, ref, computed } from 'vue'
+import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { message } from 'ant-design-vue'
 import axios from 'axios'
@@ -9,9 +9,11 @@ import * as departmentController from '@/api/departmentController'
 import * as employeeProfileController from '@/api/employeeProfileController'
 import * as companyController from '@/api/companyController'
 import * as rewardPunishmentController from '@/api/rewardPunishmentController'
+import * as evaluationController from '@/api/evaluationController'
 import { useRole } from '@/composables/useRole'
 import { useUserStore } from '@/stores/userStore'
 import type { FormInstance } from 'ant-design-vue'
+import * as echarts from 'echarts'
 
 const route = useRoute()
 const router = useRouter()
@@ -1281,6 +1283,430 @@ const filterCompanyOption = (input: string, option: any) => {
   return label.includes(input.toLowerCase())
 }
 
+// 员工评价相关
+const evaluationLoading = ref(false)
+const evaluationList = ref<API.EvaluationVO[]>([])
+const evaluationPagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+})
+const evaluationSortField = ref<string>('')
+const evaluationSortOrder = ref<string>('descend')
+const evaluationFilterType = ref<number | undefined>(undefined)
+const evaluationFilterPeriod = ref<number | undefined>(undefined)
+const evaluationFilterCompanyId = ref<string | undefined>(undefined)
+const evaluationCompanyOptions = ref<Array<{ label: string; value: string }>>([])
+const evaluationCompanyOptionsLoading = ref(false)
+const evaluationDetailModalVisible = ref(false)
+const selectedEvaluation = ref<API.EvaluationVO | null>(null)
+const evaluationRadarChartRef = ref<HTMLDivElement>()
+let evaluationRadarChart: echarts.ECharts | null = null
+
+// 获取评价类型文本
+const getEvaluationTypeText = (type: number) => {
+  const map: Record<number, string> = {
+    1: '领导评价',
+    2: '同事评价',
+    3: 'HR评价',
+    4: '自评',
+  }
+  return map[type] || '未知'
+}
+
+// 获取评价类型颜色
+const getEvaluationTypeColor = (type: number) => {
+  const map: Record<number, string> = {
+    1: 'blue',
+    2: 'green',
+    3: 'orange',
+    4: 'purple',
+  }
+  return map[type] || 'default'
+}
+
+// 切换到员工评价标签页时加载数据
+const handleEvaluationTabChange = async (key: string) => {
+  if (key === 'evaluation') {
+    evaluationPagination.current = 1
+    await loadEmployeeEvaluationList()
+    await loadEvaluationCompanyOptions()
+    // 加载五维评价数据（基于所有符合条件的评价，不分页）
+    await loadEvaluationDimensionScores()
+    // 加载标签统计（基于所有符合条件的评价，不分页）
+    await loadEvaluationTagStatistics()
+  }
+}
+
+// 加载员工评价列表
+const loadEmployeeEvaluationList = async () => {
+  try {
+    evaluationLoading.value = true
+    const requestParams: API.EvaluationQueryRequest = {
+      pageNum: evaluationPagination.current,
+      pageSize: evaluationPagination.pageSize,
+      employeeId: employeeId.value as any,
+    }
+
+    // 添加排序参数
+    if (evaluationSortField.value) {
+      requestParams.sortField = evaluationSortField.value
+      requestParams.sortOrder = evaluationSortOrder.value || 'descend'
+    }
+
+    // 添加筛选参数
+    if (evaluationFilterType.value !== undefined && evaluationFilterType.value !== null) {
+      requestParams.evaluationType = evaluationFilterType.value
+    }
+    if (evaluationFilterPeriod.value !== undefined && evaluationFilterPeriod.value !== null) {
+      requestParams.evaluationPeriod = evaluationFilterPeriod.value
+    }
+    if (evaluationFilterCompanyId.value !== undefined && evaluationFilterCompanyId.value !== null && evaluationFilterCompanyId.value !== '') {
+      // @ts-ignore - companyId字段已添加到后端，但类型定义可能未更新
+      requestParams.companyId = evaluationFilterCompanyId.value
+    }
+
+    const response = await evaluationController.pageEvaluation(requestParams)
+    if (response?.data?.code === 0) {
+      const data = response.data.data
+      evaluationList.value = data?.records || []
+      evaluationPagination.total = Number(data?.totalRow) || 0
+      await nextTick()
+      updateEvaluationRadarChart()
+    }
+  } catch (error) {
+    console.error('Failed to load evaluations:', error)
+    message.error('加载评价列表失败')
+  } finally {
+    evaluationLoading.value = false
+  }
+}
+
+// 加载评价公司选项
+const loadEvaluationCompanyOptions = async () => {
+  try {
+    evaluationCompanyOptionsLoading.value = true
+    const allEvaluationsResponse = await evaluationController.pageEvaluation({
+      pageNum: 1,
+      pageSize: 10000,
+      employeeId: employeeId.value as any,
+    })
+
+    if (allEvaluationsResponse?.data?.code !== 0) {
+      evaluationCompanyOptions.value = []
+      return
+    }
+
+    const allEvaluations = allEvaluationsResponse.data.data?.records || []
+    const companyIds = new Set<string>()
+    allEvaluations.forEach((evaluation: any) => {
+      let companyId = evaluation.companyId
+      if (companyId === undefined || companyId === null) {
+        companyId = (evaluation as any).company_id
+      }
+      if (companyId !== undefined && companyId !== null && companyId !== '') {
+        const companyIdStr = String(companyId)
+        if (companyIdStr) {
+          companyIds.add(companyIdStr)
+        }
+      }
+    })
+
+    if (companyIds.size === 0) {
+      evaluationCompanyOptions.value = []
+      return
+    }
+
+    const response = await companyController.listCompanyVoByPage({
+      pageNum: 1,
+      pageSize: 1000,
+    })
+    if (response?.data?.code === 0) {
+      const records = response.data?.data?.records || []
+      const companyIdArray = Array.from(companyIds)
+      const filtered = records.filter((item: API.CompanyVO) => {
+        if (!item.id) return false
+        return companyIdArray.includes(String(item.id))
+      })
+      
+      evaluationCompanyOptions.value = filtered.map((item: API.CompanyVO) => ({
+        label: item.name || `公司${item.id}`,
+        value: item.id ? String(item.id) : '',
+      }))
+    } else {
+      evaluationCompanyOptions.value = []
+    }
+  } catch (error) {
+    console.error('Failed to load company options:', error)
+    evaluationCompanyOptions.value = []
+  } finally {
+    evaluationCompanyOptionsLoading.value = false
+  }
+}
+
+// 从后端获取五维评价数据（考虑所有符合条件的评价，不分页）
+const evaluationDimensionScoresFromBackend = ref<Array<{ dimensionId: number; dimensionName: string; averageScore: number }>>([])
+const evaluationDimensionScoresLoading = ref(false)
+
+// 标签统计
+const evaluationTagStatistics = ref<API.EvaluationTagStatisticsVO[]>([])
+const evaluationTagStatisticsLoading = ref(false)
+
+// 加载五维评价数据
+const loadEvaluationDimensionScores = async () => {
+  try {
+    evaluationDimensionScoresLoading.value = true
+    const requestParams: API.EvaluationQueryRequest = {
+      pageNum: 1,
+      pageSize: 1, // 不需要分页数据，只需要筛选条件
+      employeeId: employeeId.value as any,
+    }
+
+    // 添加筛选参数（与评价列表的筛选条件一致）
+    if (evaluationFilterType.value !== undefined && evaluationFilterType.value !== null) {
+      requestParams.evaluationType = evaluationFilterType.value
+    }
+    if (evaluationFilterPeriod.value !== undefined && evaluationFilterPeriod.value !== null) {
+      requestParams.evaluationPeriod = evaluationFilterPeriod.value
+    }
+    if (evaluationFilterCompanyId.value !== undefined && evaluationFilterCompanyId.value !== null && evaluationFilterCompanyId.value !== '') {
+      // @ts-ignore - companyId字段已添加到后端，但类型定义可能未更新
+      requestParams.companyId = evaluationFilterCompanyId.value
+    }
+
+    const response = await evaluationController.calculateDimensionScores(requestParams)
+    if (response?.data?.code === 0) {
+      const scores = response.data.data || []
+      evaluationDimensionScoresFromBackend.value = scores.map((item: API.EvaluationDimensionScoreVO) => ({
+        dimensionId: item.dimensionId || 0,
+        dimensionName: item.dimensionName || `维度${item.dimensionId}`,
+        averageScore: item.averageScore || 0,
+      }))
+      await nextTick()
+      updateEvaluationRadarChart()
+    } else {
+      evaluationDimensionScoresFromBackend.value = []
+    }
+  } catch (error) {
+    console.error('Failed to load dimension scores:', error)
+    evaluationDimensionScoresFromBackend.value = []
+  } finally {
+    evaluationDimensionScoresLoading.value = false
+  }
+}
+
+// 加载标签统计
+const loadEvaluationTagStatistics = async () => {
+  try {
+    evaluationTagStatisticsLoading.value = true
+    const requestParams: API.EvaluationQueryRequest = {
+      pageNum: 1,
+      pageSize: 1, // 不需要分页数据，只需要筛选条件
+      employeeId: employeeId.value as any,
+    }
+
+    // 添加筛选参数（与评价列表的筛选条件一致）
+    if (evaluationFilterType.value !== undefined && evaluationFilterType.value !== null) {
+      requestParams.evaluationType = evaluationFilterType.value
+    }
+    if (evaluationFilterPeriod.value !== undefined && evaluationFilterPeriod.value !== null) {
+      requestParams.evaluationPeriod = evaluationFilterPeriod.value
+    }
+    if (evaluationFilterCompanyId.value !== undefined && evaluationFilterCompanyId.value !== null && evaluationFilterCompanyId.value !== '') {
+      // @ts-ignore - companyId字段已添加到后端，但类型定义可能未更新
+      requestParams.companyId = evaluationFilterCompanyId.value
+    }
+
+    const response = await evaluationController.countTagStatistics(requestParams)
+    if (response?.data?.code === 0) {
+      evaluationTagStatistics.value = response.data.data || []
+    } else {
+      evaluationTagStatistics.value = []
+    }
+  } catch (error) {
+    console.error('Failed to load tag statistics:', error)
+    evaluationTagStatistics.value = []
+  } finally {
+    evaluationTagStatisticsLoading.value = false
+  }
+}
+
+// 综合平均评分
+const evaluationOverallAverageScore = computed(() => {
+  const scores = evaluationDimensionScoresFromBackend.value
+  if (scores.length === 0) return 0
+  const sum = scores.reduce((acc, ds) => acc + ds.averageScore, 0)
+  return sum / scores.length
+})
+
+// 更新雷达图
+const updateEvaluationRadarChart = () => {
+  if (!evaluationRadarChartRef.value) return
+
+  const dimensionScores = evaluationDimensionScoresFromBackend.value
+
+  if (dimensionScores.length === 0) {
+    if (evaluationRadarChart) {
+      evaluationRadarChart.dispose()
+      evaluationRadarChart = null
+    }
+    return
+  }
+
+  if (!evaluationRadarChart && evaluationRadarChartRef.value) {
+    evaluationRadarChart = echarts.init(evaluationRadarChartRef.value)
+  }
+
+  if (!evaluationRadarChart || !evaluationRadarChartRef.value) {
+    return
+  }
+
+  const indicators = dimensionScores.map((item) => {
+    const name = item.dimensionName && item.dimensionName.trim() !== '' 
+      ? item.dimensionName.trim()
+      : `维度${item.dimensionId}`
+    return {
+      name: name,
+      max: 5,
+    }
+  })
+
+  const option = {
+    tooltip: {
+      show: false,
+    },
+    radar: {
+      indicator: indicators.map(({ name, max }) => ({ name, max })),
+      center: ['50%', '50%'],
+      radius: '60%',
+      axisName: {
+        color: '#333',
+        fontSize: 12,
+        formatter: (params: any) => {
+          let name = ''
+          let index = -1
+          
+          if (typeof params === 'string') {
+            name = params
+            index = indicators.findIndex((ind: any) => ind.name === params)
+          } else if (params && params.name) {
+            name = params.name
+            index = indicators.findIndex((ind: any) => ind.name === params.name)
+          }
+          
+          let score = ''
+          const dimensionScore = index >= 0 && index < dimensionScores.length ? dimensionScores[index] : null
+          if (dimensionScore && dimensionScore.averageScore !== undefined) {
+            score = dimensionScore.averageScore.toFixed(2)
+          }
+          
+          return '  ' + name + '\n' + '  ' + score + '分'
+        },
+        distance: 35,
+      },
+      splitArea: {
+        areaStyle: {
+          color: ['rgba(250, 250, 250, 0.3)', 'rgba(200, 200, 200, 0.3)'],
+        },
+      },
+      axisLine: {
+        lineStyle: {
+          color: 'rgba(211, 253, 250, 0.8)',
+        },
+      },
+      splitLine: {
+        lineStyle: {
+          color: 'rgba(211, 253, 250, 0.8)',
+        },
+      },
+    },
+    series: [
+      {
+        type: 'radar',
+        data: [
+          {
+            value: dimensionScores.map((item) => item.averageScore),
+            name: '综合评分',
+            areaStyle: {
+              color: 'rgba(24, 144, 255, 0.3)',
+            },
+            lineStyle: {
+              color: '#1890ff',
+              width: 2,
+            },
+            itemStyle: {
+              color: '#1890ff',
+            },
+          },
+        ],
+      },
+    ],
+  }
+
+  evaluationRadarChart.setOption(option)
+}
+
+// 评价排序变化处理
+const handleEvaluationSortChange = () => {
+  evaluationPagination.current = 1
+  loadEmployeeEvaluationList()
+}
+
+// 评价筛选变化处理
+const handleEvaluationFilterChange = () => {
+  evaluationPagination.current = 1
+  loadEmployeeEvaluationList()
+  loadEvaluationDimensionScores() // 重新加载五维数据
+  loadEvaluationTagStatistics() // 重新加载标签统计
+}
+
+// 重置评价筛选
+const resetEvaluationFilter = () => {
+  evaluationSortField.value = ''
+  evaluationSortOrder.value = 'descend'
+  evaluationFilterType.value = undefined
+  evaluationFilterPeriod.value = undefined
+  evaluationFilterCompanyId.value = undefined
+  evaluationPagination.current = 1
+  loadEmployeeEvaluationList()
+  loadEvaluationDimensionScores() // 重新加载五维数据
+  loadEvaluationTagStatistics() // 重新加载标签统计
+}
+
+// 查看评价详情
+const handleViewEvaluationDetail = async (record: API.EvaluationVO) => {
+  try {
+    const response = await evaluationController.getEvaluationDetail({
+      id: record.id!,
+    })
+    if (response?.data?.code === 0) {
+      selectedEvaluation.value = response.data.data || null
+      evaluationDetailModalVisible.value = true
+    } else {
+      message.error('获取评价详情失败')
+    }
+  } catch (error) {
+    console.error('Failed to load evaluation detail:', error)
+    message.error('获取评价详情失败')
+  }
+}
+
+// 评价表格分页变化
+const handleEvaluationTableChange = (pag: any) => {
+  evaluationPagination.current = pag.current
+  evaluationPagination.pageSize = pag.pageSize
+  loadEmployeeEvaluationList()
+}
+
+// 监听筛选条件变化，重新加载五维数据和标签统计
+watch(
+  () => [evaluationFilterType.value, evaluationFilterPeriod.value, evaluationFilterCompanyId.value],
+  () => {
+    loadEvaluationDimensionScores()
+    loadEvaluationTagStatistics()
+  },
+)
+
 // 打开新增档案弹窗
 const openAddProfile = async () => {
   isEditProfile.value = false
@@ -1603,6 +2029,9 @@ onMounted(async () => {
     await fetchUserAccountStatus()
   }
 })
+
+// 组件卸载时销毁图表（在已有的onBeforeUnmount中添加）
+// 注意：evaluationRadarChart的清理会在弹窗关闭时处理
 </script>
 
 <template>
@@ -1649,7 +2078,7 @@ onMounted(async () => {
 
       <a-spin :spinning="loading">
         <!-- 标签页 -->
-        <a-tabs v-model:activeKey="activeTab">
+        <a-tabs v-model:activeKey="activeTab" class="employee-detail-tabs" @change="handleEvaluationTabChange">
           <!-- 基本信息 -->
           <a-tab-pane key="info" tab="基本信息">
             <!-- 员工头像和基本信息 -->
@@ -1958,6 +2387,122 @@ onMounted(async () => {
                 </div>
               </template>
             </div>
+          </a-tab-pane>
+
+          <!-- 员工评价 -->
+          <a-tab-pane key="evaluation" tab="员工评价">
+            <a-spin :spinning="evaluationLoading">
+              <a-row :gutter="24">
+                <!-- 左侧：评价列表 -->
+                <a-col :span="16">
+                  <a-card title="评价记录" style="margin-bottom: 24px">
+                    <!-- 排序和筛选 -->
+                    <div style="margin-bottom: 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                      <span>排序方式：</span>
+                      <a-select
+                        v-model:value="evaluationSortField"
+                        style="width: 150px"
+                        placeholder="选择排序字段"
+                        @change="handleEvaluationSortChange"
+                      >
+                        <a-select-option value="">默认排序</a-select-option>
+                        <a-select-option value="create_time">评价时间</a-select-option>
+                      </a-select>
+                      <a-select
+                        v-model:value="evaluationSortOrder"
+                        style="width: 120px"
+                        placeholder="排序顺序"
+                        @change="handleEvaluationSortChange"
+                        :disabled="!evaluationSortField"
+                      >
+                        <a-select-option value="ascend">升序</a-select-option>
+                        <a-select-option value="descend">降序</a-select-option>
+                      </a-select>
+                      <span style="margin-left: 16px;">筛选：</span>
+                      <a-select
+                        v-model:value="evaluationFilterType"
+                        style="width: 150px"
+                        placeholder="评价类型"
+                        allowClear
+                        @change="handleEvaluationFilterChange"
+                      >
+                        <a-select-option :value="1 as number">领导评价</a-select-option>
+                        <a-select-option :value="2 as number">同事评价</a-select-option>
+                        <a-select-option :value="3 as number">HR评价</a-select-option>
+                        <a-select-option :value="4 as number">自评</a-select-option>
+                      </a-select>
+                      <a-select
+                        v-model:value="evaluationFilterPeriod"
+                        style="width: 150px"
+                        placeholder="评价周期"
+                        allowClear
+                        @change="handleEvaluationFilterChange"
+                      >
+                        <a-select-option :value="1 as number">季度评价</a-select-option>
+                        <a-select-option :value="2 as number">年度评价</a-select-option>
+                        <a-select-option :value="3 as number">离职评价</a-select-option>
+                        <a-select-option :value="4 as number">临时评价</a-select-option>
+                      </a-select>
+                      <a-select
+                        v-model:value="evaluationFilterCompanyId"
+                        style="width: 150px"
+                        placeholder="评价公司"
+                        allowClear
+                        :loading="evaluationCompanyOptionsLoading"
+                        @change="handleEvaluationFilterChange"
+                      >
+                        <a-select-option
+                          v-for="company in evaluationCompanyOptions"
+                          :key="company.value"
+                          :value="company.value"
+                        >
+                          {{ company.label }}
+                        </a-select-option>
+                      </a-select>
+                      <a-button @click="resetEvaluationFilter">重置</a-button>
+                    </div>
+                    <a-table
+                      :columns="[
+                        { title: '评价类型', key: 'evaluationType' },
+                        { title: '评价周期', key: 'evaluationPeriod' },
+                        { title: '评价日期', dataIndex: 'evaluationDate', key: 'evaluationDate' },
+                        { title: '操作', key: 'action', width: 100 },
+                      ]"
+                      :data-source="evaluationList"
+                      :pagination="evaluationPagination"
+                      @change="handleEvaluationTableChange"
+                      row-key="id"
+                    >
+                      <template #bodyCell="{ column, record }">
+                        <template v-if="column.key === 'evaluationType'">
+                          <a-tag :color="getEvaluationTypeColor(record.evaluationType)">
+                            {{ getEvaluationTypeText(record.evaluationType) }}
+                          </a-tag>
+                        </template>
+                        <template v-else-if="column.key === 'evaluationPeriod'">
+                          <a-tag>{{ record.evaluationPeriodText }}</a-tag>
+                        </template>
+                        <template v-else-if="column.key === 'action'">
+                          <a-button type="link" @click="handleViewEvaluationDetail(record)">查看详情</a-button>
+                        </template>
+                      </template>
+                    </a-table>
+                  </a-card>
+                </a-col>
+
+                <!-- 右侧：雷达图 -->
+                <a-col :span="8">
+                  <a-card title="五维评价雷达图">
+                    <div ref="evaluationRadarChartRef" style="width: 100%; height: 400px"></div>
+                    <!-- 综合平均评分 -->
+                    <div v-if="evaluationOverallAverageScore > 0" 
+                         style="margin-top: -34px; padding: 16px; background: white; border-radius: 4px; text-align: center; color: #666; font-size: 12px;">
+                      综合平均评分: <span style="font-size: 12px; font-weight: bold; color: #1890ff;">{{ evaluationOverallAverageScore.toFixed(2) }}</span>
+                    </div>
+                  </a-card>
+                </a-col>
+              </a-row>
+            </a-spin>
           </a-tab-pane>
         </a-tabs>
       </a-spin>
@@ -2334,6 +2879,45 @@ onMounted(async () => {
         </a-form-item>
       </a-form>
     </a-modal>
+
+
+    <!-- 评价详情弹窗 -->
+    <a-modal
+      v-model:open="evaluationDetailModalVisible"
+      title="评价详情"
+      width="700px"
+      :footer="null"
+    >
+      <a-descriptions :column="1" bordered v-if="selectedEvaluation">
+        <a-descriptions-item label="评价类型">
+          <a-tag :color="getEvaluationTypeColor(selectedEvaluation.evaluationType || 0)">
+            {{ getEvaluationTypeText(selectedEvaluation.evaluationType || 0) }}
+          </a-tag>
+        </a-descriptions-item>
+        <a-descriptions-item label="评价周期">
+          {{ selectedEvaluation.evaluationPeriodText }}
+        </a-descriptions-item>
+        <a-descriptions-item label="评价日期">
+          {{ selectedEvaluation.evaluationDate }}
+        </a-descriptions-item>
+        <a-descriptions-item label="维度评分" v-if="selectedEvaluation.dimensionScores">
+          <div v-for="ds in selectedEvaluation.dimensionScores" :key="ds.dimensionId" style="margin-bottom: 8px">
+            <span>{{ ds.dimensionName }}：</span>
+            <a-rate :value="ds.score" disabled :count="5" />
+          </div>
+        </a-descriptions-item>
+        <a-descriptions-item label="评价标签" v-if="selectedEvaluation.tags">
+          <a-space>
+            <a-tag v-for="tag in selectedEvaluation.tags" :key="tag.tagId" :color="tag.tagType === 1 ? 'green' : 'orange'">
+              {{ tag.tagName }}
+            </a-tag>
+          </a-space>
+        </a-descriptions-item>
+        <a-descriptions-item label="评价内容">
+          {{ selectedEvaluation.comment || '无' }}
+        </a-descriptions-item>
+      </a-descriptions>
+    </a-modal>
   </div>
 </template>
 
@@ -2341,5 +2925,6 @@ onMounted(async () => {
 .employee-detail {
   padding: 20px;
 }
+
 </style>
 

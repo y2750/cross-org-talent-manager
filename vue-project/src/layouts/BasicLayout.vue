@@ -24,12 +24,25 @@
               <a-menu-item key="myCompany">我的公司</a-menu-item>
               <a-menu-item key="myProfile">我的档案</a-menu-item>
               <a-menu-item key="updateProfile">更新资料</a-menu-item>
+              <a-menu-item key="evaluationTasks">
+                <a-badge v-if="pendingCount > 0" :count="pendingCount" :number-style="{ backgroundColor: '#ff4d4f' }">
+                  <span>评价任务</span>
+                </a-badge>
+                <span v-else>评价任务</span>
+              </a-menu-item>
+              <a-menu-item key="myEvaluation">我的评价</a-menu-item>
             </template>
             <template v-else>
               <a-menu-item v-if="canManageUsers" key="users">{{ userManagementLabel }}</a-menu-item>
               <a-menu-item v-if="isSystemAdmin" key="companies">公司管理</a-menu-item>
               <a-menu-item v-if="canAccessCompanyDetail" key="companyDetail">公司管理</a-menu-item>
               <a-menu-item v-if="canManageEmployees" key="employees">员工管理</a-menu-item>
+              <a-menu-item v-if="isHR || isSystemAdmin" key="evaluationTasks">
+                <a-badge v-if="pendingCount > 0" :count="pendingCount" :number-style="{ backgroundColor: '#ff4d4f' }">
+                  <span>评价任务</span>
+                </a-badge>
+                <span v-else>评价任务</span>
+              </a-menu-item>
             </template>
           </a-menu>
         </div>
@@ -48,14 +61,31 @@
 
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import GlobalHeader from '@/components/layout/GlobalHeader.vue'
 import GlobalFooter from '@/components/layout/GlobalFooter.vue'
 import { useUserStore } from '@/stores/userStore'
+import * as evaluationTaskController from '@/api/evaluationTaskController'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
+
+// 待评价数量
+const pendingCount = ref(0)
+let refreshTimer: number | null = null
+
+// 刷新待评价数量
+const refreshPendingCount = async () => {
+  try {
+    const response = await evaluationTaskController.getPendingTaskCount()
+    if (response?.data?.code === 0) {
+      pendingCount.value = response.data.data || 0
+    }
+  } catch (error) {
+    console.error('Failed to refresh pending count:', error)
+  }
+}
 
 const isSystemAdmin = computed(() => userStore.userRole === 'admin')
 const isCompanyAdmin = computed(() =>
@@ -96,10 +126,41 @@ const handleSiderClick = (e: any) => {
     myCompany: '/my-company',
     myProfile: '/my-profile',
     updateProfile: '/update-profile',
+    evaluationTasks: '/evaluation/tasks',
+    myEvaluation: '/evaluation/my',
+    createQuarterlyEvaluation: '/evaluation/create-quarterly',
   }
   const path = map[e.key]
   if (path) router.push(path)
 }
+
+// 初始化时加载待评价数量
+onMounted(() => {
+  // 只有员工、HR或系统管理员才需要显示待评价数量
+  if (isEmployee.value || isHR.value || isSystemAdmin.value) {
+    refreshPendingCount()
+    // 每30秒刷新一次
+    refreshTimer = window.setInterval(refreshPendingCount, 30000)
+  }
+})
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+})
+
+// 监听路由变化，当进入评价任务页面时刷新数量
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath === '/evaluation/tasks' && (isEmployee.value || isHR.value || isSystemAdmin.value)) {
+      refreshPendingCount()
+    }
+  }
+)
 </script>
 
 <style scoped>
