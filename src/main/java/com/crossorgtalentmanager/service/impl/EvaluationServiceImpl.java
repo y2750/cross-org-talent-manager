@@ -13,11 +13,15 @@ import com.crossorgtalentmanager.model.vo.EvaluationDimensionScoreVO;
 import com.crossorgtalentmanager.model.vo.EvaluationStatisticsVO;
 import com.crossorgtalentmanager.model.vo.EvaluationTagStatisticsVO;
 import com.crossorgtalentmanager.model.vo.EvaluationVO;
+import com.crossorgtalentmanager.service.CompanyPointsService;
+import com.crossorgtalentmanager.service.CompanyService;
 import com.crossorgtalentmanager.service.DepartmentService;
+import com.crossorgtalentmanager.service.EmployeeProfileService;
 import com.crossorgtalentmanager.service.EmployeeService;
 import com.crossorgtalentmanager.service.EvaluationService;
 import com.crossorgtalentmanager.service.EvaluationTaskService;
 import com.crossorgtalentmanager.service.UserService;
+import com.crossorgtalentmanager.model.enums.PointsChangeReasonEnum;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
@@ -26,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -70,6 +75,15 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
 
     @Resource
     private EvaluationTaskService evaluationTaskService;
+
+    @Resource
+    private CompanyPointsService companyPointsService;
+
+    @Resource
+    private EmployeeProfileService employeeProfileService;
+
+    @Resource
+    private CompanyService companyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -118,6 +132,34 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
         Employee employee = employeeService.getById(addRequest.getEmployeeId());
         ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "被评价员工不存在");
         Long companyId = employee.getCompanyId(); // 可能为null（已离职员工）
+
+        // 如果员工companyId为null（离职员工），尝试从员工的档案中获取公司ID
+        if (companyId == null) {
+            List<com.crossorgtalentmanager.model.entity.EmployeeProfile> profiles = employeeProfileService.list(
+                    QueryWrapper.create()
+                            .eq("employee_id", addRequest.getEmployeeId())
+                            .orderBy("create_time", false)
+                            .limit(1));
+            if (profiles != null && !profiles.isEmpty()) {
+                companyId = profiles.get(0).getCompanyId();
+                log.info("从员工档案获取公司ID：employeeId={}, companyId={}", addRequest.getEmployeeId(), companyId);
+            }
+        }
+
+        // 如果还是null，尝试从评价人的公司ID获取（对于hr/部门主管评价自己公司的员工）
+        if (companyId == null && loginUser.getCompanyId() != null) {
+            companyId = loginUser.getCompanyId();
+            log.info("从评价人公司获取公司ID：evaluatorId={}, companyId={}", loginUser.getId(), companyId);
+        }
+
+        // 对于HR评价(3)或领导评价(1)，确保companyId不为null（使用评价人的companyId）
+        Integer evaluationTypeForCompanyId = addRequest.getEvaluationType();
+        if ((EvaluationTypeEnum.HR.getValue().equals(evaluationTypeForCompanyId)
+                || EvaluationTypeEnum.LEADER.getValue().equals(evaluationTypeForCompanyId))
+                && companyId == null && loginUser.getCompanyId() != null) {
+            companyId = loginUser.getCompanyId();
+            log.info("HR/领导评价时，使用评价人公司ID：evaluatorId={}, companyId={}", loginUser.getId(), companyId);
+        }
 
         // 4. 创建评价记录
         Evaluation evaluation = Evaluation.builder()
@@ -168,6 +210,26 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
                         .tagId(tagId)
                         .build();
                 tagRelationMapper.insert(tagRelation);
+            }
+        }
+
+        // 6. 如果评价类型为HR评价(3)或领导评价(1)，则增加企业积分+5分
+        Integer evaluationType = addRequest.getEvaluationType();
+        if (companyId != null && (EvaluationTypeEnum.HR.getValue().equals(evaluationType)
+                || EvaluationTypeEnum.LEADER.getValue().equals(evaluationType))) {
+            try {
+                companyPointsService.addPoints(
+                        companyId,
+                        BigDecimal.valueOf(5),
+                        PointsChangeReasonEnum.EMPLOYEE_EVALUATION.getValue(),
+                        addRequest.getEmployeeId(),
+                        null); // changeDescription will be auto-generated
+                log.info("HR/领导评价增加积分：companyId={}, employeeId={}, evaluationType={}, points=5",
+                        companyId, addRequest.getEmployeeId(), evaluationType);
+            } catch (Exception e) {
+                log.error("添加积分失败：companyId={}, employeeId={}, evaluationType={}",
+                        companyId, addRequest.getEmployeeId(), evaluationType, e);
+                // 积分添加失败不影响评价创建，只记录日志
             }
         }
 
@@ -489,17 +551,28 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
         Evaluation evaluation = this.getById(id);
         ThrowUtils.throwIf(evaluation == null, ErrorCode.NOT_FOUND_ERROR, "评价不存在");
 
-        // 权限校验：HR及以上可以删除，或者只能删除自己创建的评价
-        boolean isHr = UserRoleEnum.HR.getValue().equals(loginUser.getUserRole());
-        boolean isCompanyAdmin = UserRoleEnum.COMPANY_ADMIN.getValue().equals(loginUser.getUserRole());
+        // 权限校验：只有系统管理员可以删除
         boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(!isAdmin, ErrorCode.NO_AUTH_ERROR, "只有系统管理员可以删除评价");
 
-        if (!(isHr || isCompanyAdmin || isAdmin)) {
-            ThrowUtils.throwIf(!evaluation.getEvaluatorId().equals(loginUser.getId()),
-                    ErrorCode.NO_AUTH_ERROR, "只能删除自己创建的评价");
+        // 逻辑删除评价（评价表）
+        boolean deleted = this.removeById(id);
+
+        // 逻辑删除关联的标签记录（evaluation_tag_relation表）
+        if (deleted) {
+            List<EvaluationTagRelation> tagRelations = tagRelationMapper.selectListByQuery(
+                    QueryWrapper.create().eq("evaluation_id", id));
+            if (tagRelations != null && !tagRelations.isEmpty()) {
+                for (EvaluationTagRelation tagRelation : tagRelations) {
+                    tagRelation.setIsDelete(true);
+                    tagRelationMapper.update(tagRelation);
+                }
+                log.info("删除评价时，同时逻辑删除了 {} 条标签关联记录，evaluationId={}",
+                        tagRelations.size(), id);
+            }
         }
 
-        return this.removeById(id);
+        return deleted;
     }
 
     @Override
@@ -800,10 +873,41 @@ public class EvaluationServiceImpl extends ServiceImpl<EvaluationMapper, Evaluat
             vo.setEmployeeName(employee.getName());
         }
 
-        // 填充评价人姓名
+        // 填充评价人姓名和公司信息
         User evaluator = userService.getById(evaluation.getEvaluatorId());
         if (evaluator != null) {
             vo.setEvaluatorName(evaluator.getNickname());
+
+            // 获取评价人所属公司ID
+            Long evaluatorCompanyId = evaluator.getCompanyId();
+
+            // 如果评价人是employee角色且user表中的companyId为null，则从employee表获取
+            if (evaluatorCompanyId == null && UserRoleEnum.EMPLOYEE.getValue().equals(evaluator.getUserRole())) {
+                List<Employee> evaluatorEmployees = employeeService.list(
+                        QueryWrapper.create().eq("user_id", evaluator.getId()).limit(1));
+                if (evaluatorEmployees != null && !evaluatorEmployees.isEmpty()) {
+                    Employee evaluatorEmployee = evaluatorEmployees.get(0);
+                    evaluatorCompanyId = evaluatorEmployee.getCompanyId();
+                }
+            }
+
+            vo.setEvaluatorCompanyId(evaluatorCompanyId);
+
+            // 获取评价人所属公司名称
+            if (evaluatorCompanyId != null) {
+                Company evaluatorCompany = companyService.getById(evaluatorCompanyId);
+                if (evaluatorCompany != null) {
+                    vo.setEvaluatorCompanyName(evaluatorCompany.getName());
+                }
+            }
+        }
+
+        // 填充被评价员工所属公司名称
+        if (evaluation.getCompanyId() != null) {
+            Company company = companyService.getById(evaluation.getCompanyId());
+            if (company != null) {
+                vo.setCompanyName(company.getName());
+            }
         }
 
         // 填充评价类型文本

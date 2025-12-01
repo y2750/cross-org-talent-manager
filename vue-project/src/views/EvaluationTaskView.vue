@@ -311,6 +311,7 @@
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, reactive, computed, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import * as evaluationController from '@/api/evaluationController'
 import * as evaluationTaskController from '@/api/evaluationTaskController'
@@ -322,7 +323,8 @@ import { useRole } from '@/composables/useRole'
 import * as echarts from 'echarts'
 
 const userStore = useUserStore()
-const { isHR, isEmployee } = useRole()
+const router = useRouter()
+const { isHR, isEmployee, isSystemAdmin } = useRole()
 
 const activeTab = ref('pending')
 const pendingCount = ref(0)
@@ -1076,6 +1078,12 @@ watch(
 )
 
 onMounted(async () => {
+  // 系统管理员不能访问评价任务页面
+  if (isSystemAdmin()) {
+    message.warning('系统管理员不能访问评价任务页面')
+    router.push('/home')
+    return
+  }
   await loadDimensionsAndTags()
   await refreshPendingCount()
   await loadPendingList()

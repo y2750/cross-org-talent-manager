@@ -1,5 +1,6 @@
 package com.crossorgtalentmanager.model.entity;
 
+import com.mybatisflex.annotation.Column;
 import com.mybatisflex.annotation.Id;
 import com.mybatisflex.annotation.KeyType;
 import com.mybatisflex.annotation.Table;
@@ -40,4 +41,9 @@ public class EvaluationTagRelation implements Serializable {
     private Long tagId;
 
     private LocalDateTime createTime;
+
+    private LocalDateTime updateTime;
+
+    @Column(isLogicDelete = true)
+    private Boolean isDelete;
 }

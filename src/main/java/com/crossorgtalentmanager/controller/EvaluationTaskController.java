@@ -36,7 +36,7 @@ public class EvaluationTaskController {
     @PostMapping("/create")
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
     public BaseResponse<Integer> createEvaluationTasks(@RequestBody EvaluationTaskCreateRequest createRequest,
-                                                        HttpServletRequest request) {
+            HttpServletRequest request) {
         ThrowUtils.throwIf(createRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
@@ -59,7 +59,7 @@ public class EvaluationTaskController {
         User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
         Integer count = evaluationTaskService.createQuarterlyEvaluationTasks(
-            departmentId, periodYear, periodQuarter, loginUser);
+                departmentId, periodYear, periodQuarter, loginUser);
         return ResultUtils.success(count);
     }
 
@@ -73,6 +73,9 @@ public class EvaluationTaskController {
         ThrowUtils.throwIf(queryRequest == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        // 系统管理员不能查看评价任务
+        ThrowUtils.throwIf("admin".equals(loginUser.getUserRole()),
+                ErrorCode.NO_AUTH_ERROR, "系统管理员不能查看评价任务");
         Page<EvaluationTaskVO> result = evaluationTaskService.pageEvaluationTasks(queryRequest, loginUser);
         return ResultUtils.success(result);
     }
@@ -84,9 +87,10 @@ public class EvaluationTaskController {
     public BaseResponse<Long> getPendingTaskCount(HttpServletRequest request) {
         User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        // 系统管理员不能查看评价任务
+        ThrowUtils.throwIf("admin".equals(loginUser.getUserRole()),
+                ErrorCode.NO_AUTH_ERROR, "系统管理员不能查看评价任务");
         Long count = evaluationTaskService.getPendingTaskCount(loginUser.getId());
         return ResultUtils.success(count);
     }
 }
-
-

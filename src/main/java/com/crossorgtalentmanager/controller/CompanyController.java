@@ -22,7 +22,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.crossorgtalentmanager.model.entity.Company;
+import com.crossorgtalentmanager.model.entity.CompanyPoints;
+import com.crossorgtalentmanager.model.entity.User;
+import com.crossorgtalentmanager.model.vo.CompanyPointsVO;
+import com.crossorgtalentmanager.service.CompanyPointsService;
 import com.crossorgtalentmanager.service.CompanyService;
+import com.crossorgtalentmanager.service.EmployeeService;
+import com.crossorgtalentmanager.service.UserService;
+import com.crossorgtalentmanager.model.enums.PointsChangeReasonEnum;
+import com.mybatisflex.core.paginate.Page;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * 企业信息管理 控制层。
@@ -35,6 +44,15 @@ public class CompanyController {
 
     @Resource
     private CompanyService companyService;
+
+    @Resource
+    private CompanyPointsService companyPointsService;
+
+    @Resource
+    private EmployeeService employeeService;
+
+    @Resource
+    private UserService userService;
 
     @PostMapping("/add")
     @AuthCheck(mustRole = UserConstant.COMPANY_ADMIN_ROLE)
@@ -144,6 +162,105 @@ public class CompanyController {
         boolean result = companyService.updateById(company);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR, "更新失败");
         return ResultUtils.success(true);
+    }
+
+    /**
+     * 获取公司的积分（支持admin查看任意公司，hr和company_admin查看自己的公司）
+     */
+    @GetMapping("/points")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<java.math.BigDecimal> getCompanyPoints(Long companyId, HttpServletRequest request) {
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户未登录");
+
+        // 确定要查询的公司ID
+        Long targetCompanyId = null;
+        boolean isAdmin = UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+
+        if (isAdmin) {
+            // 管理员可以查看任意公司，使用传入的companyId参数
+            ThrowUtils.throwIf(companyId == null || companyId <= 0,
+                    ErrorCode.PARAMS_ERROR, "管理员查询时需要指定公司ID");
+            targetCompanyId = companyId;
+        } else {
+            // HR或公司管理员只能查看自己公司的积分
+            String userRole = loginUser.getUserRole();
+            ThrowUtils.throwIf(!UserConstant.HR_ROLE.equals(userRole)
+                    && !UserConstant.COMPANY_ADMIN_ROLE.equals(userRole),
+                    ErrorCode.NO_AUTH_ERROR, "无权限访问");
+            ThrowUtils.throwIf(loginUser.getCompanyId() == null,
+                    ErrorCode.NO_AUTH_ERROR, "用户无公司信息");
+            targetCompanyId = loginUser.getCompanyId();
+        }
+
+        java.math.BigDecimal totalPoints = companyPointsService.getTotalPoints(targetCompanyId);
+        return ResultUtils.success(totalPoints);
+    }
+
+    /**
+     * 分页查询公司的积分变动记录（支持admin查看任意公司，hr和company_admin查看自己的公司）
+     */
+    @GetMapping("/points/history")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<Page<CompanyPointsVO>> getCompanyPointsHistory(long pageNum, long pageSize,
+            Long companyId, HttpServletRequest request) {
+        ThrowUtils.throwIf(pageNum <= 0 || pageSize <= 0, ErrorCode.PARAMS_ERROR, "分页参数错误");
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户未登录");
+
+        // 确定要查询的公司ID
+        Long targetCompanyId = null;
+        boolean isAdmin = UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+
+        if (isAdmin) {
+            // 管理员可以查看任意公司，使用传入的companyId参数
+            ThrowUtils.throwIf(companyId == null || companyId <= 0,
+                    ErrorCode.PARAMS_ERROR, "管理员查询时需要指定公司ID");
+            targetCompanyId = companyId;
+        } else {
+            // HR或公司管理员只能查看自己公司的积分
+            String userRole = loginUser.getUserRole();
+            ThrowUtils.throwIf(!UserConstant.HR_ROLE.equals(userRole)
+                    && !UserConstant.COMPANY_ADMIN_ROLE.equals(userRole),
+                    ErrorCode.NO_AUTH_ERROR, "无权限访问");
+            ThrowUtils.throwIf(loginUser.getCompanyId() == null,
+                    ErrorCode.NO_AUTH_ERROR, "用户无公司信息");
+            targetCompanyId = loginUser.getCompanyId();
+        }
+
+        Page<CompanyPoints> pointsPage = companyPointsService.getPointsHistory(
+                targetCompanyId, pageNum, pageSize);
+
+        // 转换为VO
+        Page<CompanyPointsVO> voPage = new Page<>(pageNum, pageSize, pointsPage.getTotalRow());
+        java.util.List<CompanyPointsVO> voList = pointsPage.getRecords().stream().map(point -> {
+            CompanyPointsVO vo = new CompanyPointsVO();
+            cn.hutool.core.bean.BeanUtil.copyProperties(point, vo);
+
+            // 设置变动原因文本
+            PointsChangeReasonEnum reasonEnum = PointsChangeReasonEnum.getEnumByValue(point.getChangeReason());
+            if (reasonEnum != null) {
+                vo.setChangeReasonText(reasonEnum.getText());
+            }
+
+            // 设置员工姓名
+            if (point.getWithEmployeeId() != null) {
+                try {
+                    com.crossorgtalentmanager.model.entity.Employee employee = employeeService
+                            .getById(point.getWithEmployeeId());
+                    if (employee != null) {
+                        vo.setWithEmployeeName(employee.getName());
+                    }
+                } catch (Exception e) {
+                    // 忽略错误，员工可能已删除
+                }
+            }
+
+            return vo;
+        }).collect(java.util.stream.Collectors.toList());
+
+        voPage.setRecords(voList);
+        return ResultUtils.success(voPage);
     }
 
 }

@@ -6,6 +6,7 @@ import com.mybatisflex.annotation.KeyType;
 import com.mybatisflex.annotation.Table;
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 import java.io.Serial;
@@ -17,7 +18,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 企业信息管理 实体类。
+ * 企业积分变动记录 实体类。
  *
  * @author <a href="https://github.com/y2750">y</a>
  */
@@ -25,8 +26,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table("company")
-public class Company implements Serializable {
+@Table("company_points")
+public class CompanyPoints implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -35,39 +36,34 @@ public class Company implements Serializable {
     private Long id;
 
     /**
-     * 企业名称
+     * 所属企业
      */
-    private String name;
+    private Long companyId;
 
     /**
-     * 联系人id
+     * 积分变动（正/负）
      */
-    private Long contactPersonId;
+    private BigDecimal points;
 
     /**
-     * 企业电话
+     * 变动原因（1=建立档案，2=员工评价）
      */
-    private String phone;
+    private Integer changeReason;
 
     /**
-     * 企业邮箱
+     * 关联员工id
      */
-    private String email;
+    private Long withEmployeeId;
 
     /**
-     * 行业大类
+     * 变动说明（后端自动生成）
      */
-    private String industryCategory;
+    private String changeDescription;
 
     /**
-     * 行业子类（JSON数组格式）
+     * 变动日期
      */
-    private String industry;
-
-    /**
-     * 当前总积分
-     */
-    private BigDecimal totalPoints;
+    private LocalDate changeDate;
 
     private LocalDateTime createTime;
 

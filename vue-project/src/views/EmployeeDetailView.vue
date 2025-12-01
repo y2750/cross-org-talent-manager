@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick, watch } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
 import axios from 'axios'
 import * as employeeController from '@/api/employeeController'
 import * as userController from '@/api/userController'
@@ -1691,6 +1691,34 @@ const handleViewEvaluationDetail = async (record: API.EvaluationVO) => {
   }
 }
 
+// 删除评价（仅admin可用）
+const handleDeleteEvaluation = async () => {
+  if (!selectedEvaluation.value?.id) {
+    return
+  }
+  
+  try {
+    const response = await evaluationController.deleteEvaluation({
+      id: selectedEvaluation.value!.id!,
+    })
+    if (response?.data?.code === 0) {
+      message.success('删除成功')
+      evaluationDetailModalVisible.value = false
+      selectedEvaluation.value = null
+      // 重新加载评价列表
+      await loadEmployeeEvaluationList()
+      // 重新加载五维评价数据和标签统计
+      await loadEvaluationDimensionScores()
+      await loadEvaluationTagStatistics()
+    } else {
+      message.error(response?.data?.message || '删除失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to delete evaluation:', error)
+    message.error(error?.response?.data?.message || '删除失败')
+  }
+}
+
 // 评价表格分页变化
 const handleEvaluationTableChange = (pag: any) => {
   evaluationPagination.current = pag.current
@@ -2886,13 +2914,34 @@ onMounted(async () => {
       v-model:open="evaluationDetailModalVisible"
       title="评价详情"
       width="700px"
-      :footer="null"
     >
+      <template #footer>
+        <a-space v-if="isSystemAdmin()">
+          <a-popconfirm
+            title="确认删除"
+            description="确定要删除这条评价吗？删除后无法恢复。"
+            ok-text="确定"
+            cancel-text="取消"
+            @confirm="handleDeleteEvaluation"
+          >
+            <a-button danger>删除</a-button>
+          </a-popconfirm>
+        </a-space>
+      </template>
       <a-descriptions :column="1" bordered v-if="selectedEvaluation">
         <a-descriptions-item label="评价类型">
           <a-tag :color="getEvaluationTypeColor(selectedEvaluation.evaluationType || 0)">
             {{ getEvaluationTypeText(selectedEvaluation.evaluationType || 0) }}
           </a-tag>
+        </a-descriptions-item>
+        <a-descriptions-item v-if="isSystemAdmin()" label="评价人">
+          {{ selectedEvaluation.evaluatorName || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="isSystemAdmin()" label="评价人所属公司">
+          {{ selectedEvaluation.evaluatorCompanyName || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="isSystemAdmin()" label="被评价员工所属公司">
+          {{ selectedEvaluation.companyName || '-' }}
         </a-descriptions-item>
         <a-descriptions-item label="评价周期">
           {{ selectedEvaluation.evaluationPeriodText }}
@@ -2907,11 +2956,11 @@ onMounted(async () => {
           </div>
         </a-descriptions-item>
         <a-descriptions-item label="评价标签" v-if="selectedEvaluation.tags">
-          <a-space>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
             <a-tag v-for="tag in selectedEvaluation.tags" :key="tag.tagId" :color="tag.tagType === 1 ? 'green' : 'orange'">
               {{ tag.tagName }}
             </a-tag>
-          </a-space>
+          </div>
         </a-descriptions-item>
         <a-descriptions-item label="评价内容">
           {{ selectedEvaluation.comment || '无' }}

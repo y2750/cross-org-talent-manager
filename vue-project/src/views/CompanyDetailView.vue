@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onMounted, reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
@@ -81,6 +81,16 @@ const departmentSearchParams = reactive({
 // 管理人列表
 const managerList = ref<API.UserVO[]>([])
 const managerLoading = ref(false)
+
+// 积分相关（hr、company_admin和admin可见）
+const canViewPoints = computed(() => isHR() || isCompanyAdmin() || isSystemAdmin())
+const totalPoints = ref<number>(0)
+const pointsLoading = ref(false)
+const pointsHistory = ref<API.CompanyPointsVO[]>([])
+const pointsHistoryLoading = ref(false)
+const pointsHistoryPageNum = ref(1)
+const pointsHistoryPageSize = ref(10)
+const pointsHistoryTotal = ref(0)
 
 // 表单引用
 const companyFormRef = ref<FormInstance>()
@@ -187,6 +197,11 @@ const fetchCompanyInfo = async () => {
       companyFormState.phone = result.data.data.phone || ''
       companyFormState.email = result.data.data.email || ''
       companyFormState.industries = result.data.data.industries || []
+      
+      // 更新积分显示（如果可见）
+      if (canViewPoints.value && result.data.data.totalPoints !== undefined) {
+        totalPoints.value = Number(result.data.data.totalPoints) || 0
+      }
     } else {
       const errorMsg = result?.data?.message || '请求数据不存在'
       message.error(errorMsg)
@@ -243,6 +258,92 @@ const fetchHomeStats = async () => {
     }
   } catch (error) {
     console.error('Failed to fetch home stats:', error)
+  }
+}
+
+// 获取积分
+const fetchPoints = async () => {
+  if (!canViewPoints.value) {
+    return
+  }
+  try {
+    pointsLoading.value = true
+    
+    // 从companyInfo中获取积分（已在fetchCompanyInfo中加载）
+    if (companyInfo.value && companyInfo.value.totalPoints !== undefined) {
+      totalPoints.value = Number(companyInfo.value.totalPoints) || 0
+    } else {
+      // 如果companyInfo中没有，通过积分接口获取
+      let targetCompanyId: number | undefined
+      if (isSystemAdmin()) {
+        // admin可以查看任意公司
+        targetCompanyId = companyId.value ? Number(companyId.value) : undefined
+      } else {
+        // hr和company_admin查看自己的公司
+        targetCompanyId = userStore.userInfo?.companyId ? Number(userStore.userInfo.companyId) : undefined
+      }
+      
+      if (targetCompanyId) {
+        const result = await companyController.getCompanyPoints({
+          companyId: targetCompanyId,
+        })
+        if (result?.data?.code === 0 && result.data.data !== undefined) {
+          totalPoints.value = Number(result.data.data) || 0
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error('Failed to fetch points:', error)
+  } finally {
+    pointsLoading.value = false
+  }
+}
+
+// 获取积分变动记录
+const fetchPointsHistory = async (page: number = 1) => {
+  if (!canViewPoints.value) {
+    return
+  }
+  
+  try {
+    pointsHistoryLoading.value = true
+    
+    // 确定要查询的公司ID
+    let targetCompanyId: number | undefined
+    if (isSystemAdmin()) {
+      // admin可以查看任意公司，使用路由参数中的companyId
+      targetCompanyId = companyId.value ? Number(companyId.value) : undefined
+    } else {
+      // hr和company_admin查看自己的公司
+      targetCompanyId = userStore.userInfo?.companyId ? Number(userStore.userInfo.companyId) : undefined
+    }
+    
+    if (!targetCompanyId) {
+      pointsHistory.value = []
+      pointsHistoryTotal.value = 0
+      return
+    }
+    
+    const result = await companyController.getCompanyPointsHistory({
+      pageNum: page,
+      pageSize: pointsHistoryPageSize.value,
+      companyId: targetCompanyId,
+    })
+    
+    if (result?.data?.code === 0 && result.data.data) {
+      pointsHistory.value = result.data.data.records || []
+      pointsHistoryTotal.value = result.data.data.totalRow || 0
+      pointsHistoryPageNum.value = page
+    } else {
+      const errorMsg = result?.data?.message || '获取积分变动记录失败'
+      message.error(errorMsg)
+    }
+  } catch (error: any) {
+    console.error('Failed to fetch points history:', error)
+    const errorMsg = error?.response?.data?.message || error?.message || '获取积分变动记录失败'
+    message.error(errorMsg)
+  } finally {
+    pointsHistoryLoading.value = false
   }
 }
 
@@ -874,7 +975,10 @@ const handleDepartmentTableChange = (pagination: any) => {
 // 菜单切换
 const handleMenuChange = (key: string) => {
   selectedMenu.value = key
-  if (key === 'employees') {
+  if (key === 'points') {
+    // 切换到积分变动记录时，加载数据
+    fetchPointsHistory(1)
+  } else if (key === 'employees') {
     // 先获取部门列表，以便在搜索时使用
     fetchDepartmentList().then(() => {
       fetchEmployeeList()
@@ -908,11 +1012,26 @@ const managerFormRules = {
   userId: [{ required: true, message: '请选择用户', trigger: 'change' }],
 }
 
+// 监听菜单变化，自动加载积分变动记录
+watch(selectedMenu, (newMenu) => {
+  if (newMenu === 'points' && canViewPoints.value) {
+    fetchPointsHistory(1)
+  }
+})
+
 // 初始化
 onMounted(async () => {
   await fetchCompanyInfo()
   await fetchHomeStats()
   await fetchContactPersonOptions()
+  // 如果是hr、company_admin或admin，获取积分信息（仅获取总积分，变动记录在菜单切换时加载）
+  if (canViewPoints.value) {
+    await fetchPoints()
+    // 如果默认菜单是积分变动记录，则加载数据
+    if (selectedMenu.value === 'points') {
+      fetchPointsHistory(1)
+    }
+  }
 })
 </script>
 
@@ -947,6 +1066,7 @@ onMounted(async () => {
             <a-menu-item key="home">首页</a-menu-item>
             <a-menu-item key="employees">员工详情</a-menu-item>
             <a-menu-item key="departments">部门详情</a-menu-item>
+            <a-menu-item v-if="canViewPoints" key="points">积分变动记录</a-menu-item>
             <a-menu-item v-if="isSystemAdmin() || isCompanyAdmin()" key="managers">管理人变更</a-menu-item>
             <a-menu-item v-if="isSystemAdmin() || isCompanyAdmin()" key="settings">公司资料更新</a-menu-item>
           </a-menu>
@@ -969,6 +1089,13 @@ onMounted(async () => {
               <a-descriptions-item label="员工人数">{{ employeeCount }}</a-descriptions-item>
               <a-descriptions-item label="部门数量">{{ departmentCount }}</a-descriptions-item>
               <a-descriptions-item v-if="!isHR()" label="管理人数量">{{ managerCount }}</a-descriptions-item>
+              <a-descriptions-item v-if="canViewPoints" label="当前积分">
+                <a-spin :spinning="pointsLoading">
+                  <span style="font-size: 16px; font-weight: bold; color: #1890ff;">
+                    {{ totalPoints.toFixed(2) }}
+                  </span>
+                </a-spin>
+              </a-descriptions-item>
               <a-descriptions-item label="联系人">
                 {{ companyInfo?.contactPersonName || '-' }}
               </a-descriptions-item>
@@ -1124,6 +1251,50 @@ onMounted(async () => {
                 </template>
               </template>
             </a-table>
+          </a-card>
+        </div>
+
+        <!-- 积分变动记录 -->
+        <div v-if="selectedMenu === 'points'" class="points-content">
+          <a-card>
+            <template #title>积分变动记录</template>
+            <a-spin :spinning="pointsHistoryLoading">
+              <a-table
+                :columns="[
+                  { title: '变动日期', dataIndex: 'changeDate', key: 'changeDate', width: 120 },
+                  { title: '变动原因', dataIndex: 'changeReasonText', key: 'changeReasonText', width: 120 },
+                  { title: '变动说明', dataIndex: 'changeDescription', key: 'changeDescription', width: 200 },
+                  { title: '关联员工', dataIndex: 'withEmployeeName', key: 'withEmployeeName', width: 120 },
+                  { title: '积分变动', dataIndex: 'points', key: 'points', width: 120 },
+                ]"
+                :data-source="pointsHistory"
+                :loading="pointsHistoryLoading"
+                :pagination="{
+                  current: pointsHistoryPageNum,
+                  pageSize: pointsHistoryPageSize,
+                  total: pointsHistoryTotal,
+                  showSizeChanger: false,
+                  showTotal: (total) => `共 ${total} 条`,
+                }"
+                row-key="id"
+                @change="(pag: any) => fetchPointsHistory(pag.current)"
+              >
+                <template #bodyCell="{ column, record }">
+                  <template v-if="column.key === 'points'">
+                    <span style="color: #52c41a; font-weight: bold;">
+                      +{{ Number(record.points || 0).toFixed(2) }}
+                    </span>
+                  </template>
+                  <template v-else-if="column.key === 'changeDescription'">
+                    {{ record.changeDescription || '-' }}
+                  </template>
+                  <template v-else-if="column.key === 'withEmployeeName'">
+                    {{ record.withEmployeeName || '-' }}
+                  </template>
+                </template>
+              </a-table>
+              <a-empty v-if="!pointsHistoryLoading && pointsHistory.length === 0" description="暂无积分变动记录" />
+            </a-spin>
           </a-card>
         </div>
 

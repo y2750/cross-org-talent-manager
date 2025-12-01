@@ -152,6 +152,19 @@ public class EvaluationTaskServiceImpl extends ServiceImpl<EvaluationTaskMapper,
             return 0;
         }
 
+        // 过滤掉admin用户（系统管理员不应该接收评价任务）
+        List<User> evaluatorUsers = userService.list(
+                QueryWrapper.create().in("id", evaluatorIds));
+        evaluatorIds = evaluatorUsers.stream()
+                .filter(user -> !UserRoleEnum.ADMIN.getValue().equals(user.getUserRole()))
+                .map(User::getId)
+                .collect(Collectors.toList());
+
+        if (evaluatorIds.isEmpty()) {
+            log.warn("过滤admin后，未找到评价人，无法创建评价任务");
+            return 0;
+        }
+
         // 创建任务
         int taskCount = 0;
         LocalDateTime deadline = createRequest.getDeadline();

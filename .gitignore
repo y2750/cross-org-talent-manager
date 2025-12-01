@@ -35,3 +35,5 @@ src/main/resources/application-local.yml
 
 *.md
 /*.md
+*.sql
+/*.sql

@@ -31,6 +31,11 @@ public class CompanyVO implements Serializable {
      */
     private List<String> industries;
 
+    /**
+     * 当前总积分
+     */
+    private java.math.BigDecimal totalPoints;
+
     private LocalDateTime createTime;
 
     private static final long serialVersionUID = 1L;

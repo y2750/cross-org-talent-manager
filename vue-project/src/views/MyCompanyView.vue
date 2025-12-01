@@ -5,8 +5,13 @@ import * as employeeController from '@/api/employeeController'
 import * as companyController from '@/api/companyController'
 import * as departmentController from '@/api/departmentController'
 import { useUserStore } from '@/stores/userStore'
+import { useRole } from '@/composables/useRole'
 
 const userStore = useUserStore()
+const { isHR, isCompanyAdmin } = useRole()
+
+// 是否可以查看积分（hr或company_admin）
+const canViewPoints = computed(() => isHR() || isCompanyAdmin())
 
 // 当前员工信息
 const myEmployeeInfo = ref<API.EmployeeVO | null>(null)
@@ -27,6 +32,15 @@ const colleaguesLoading = ref(false)
 // 搜索和筛选
 const searchName = ref('')
 const selectedGender = ref<string | undefined>(undefined)
+
+// 积分相关
+const totalPoints = ref<number>(0)
+const pointsLoading = ref(false)
+const pointsHistory = ref<API.CompanyPointsVO[]>([])
+const pointsHistoryLoading = ref(false)
+const pointsHistoryPageNum = ref(1)
+const pointsHistoryPageSize = ref(10)
+const pointsHistoryTotal = ref(0)
 
 // 获取当前员工信息
 const fetchMyEmployeeInfo = async () => {
@@ -217,6 +231,56 @@ const filteredColleagues = computed(() => {
   return filtered
 })
 
+// 获取积分
+const fetchPoints = async () => {
+  if (!canViewPoints.value) {
+    return
+  }
+  try {
+    pointsLoading.value = true
+    const result = await companyController.getCompanyPoints({})
+    if (result?.data?.code === 0 && result.data.data !== undefined) {
+      totalPoints.value = Number(result.data.data) || 0
+    }
+  } catch (error: any) {
+    console.error('Failed to fetch points:', error)
+    // 不显示错误信息
+  } finally {
+    pointsLoading.value = false
+  }
+}
+
+// 获取积分变动记录
+const fetchPointsHistory = async (page: number = 1) => {
+  if (!canViewPoints.value) {
+    return
+  }
+  try {
+    pointsHistoryLoading.value = true
+    const result = await companyController.getCompanyPointsHistory({
+      pageNum: page,
+      pageSize: pointsHistoryPageSize.value,
+    })
+    if (result?.data?.code === 0 && result.data.data) {
+      pointsHistory.value = result.data.data.records || []
+      pointsHistoryTotal.value = result.data.data.totalRow || 0
+      pointsHistoryPageNum.value = page
+    }
+  } catch (error: any) {
+    console.error('Failed to fetch points history:', error)
+    message.error('获取积分变动记录失败')
+  } finally {
+    pointsHistoryLoading.value = false
+  }
+}
+
+// 格式化变动原因
+const formatChangeReason = (reason: number | undefined): string => {
+  if (reason === 1) return '建立档案'
+  if (reason === 2) return '员工评价'
+  return '-'
+}
+
 onMounted(async () => {
   await fetchMyEmployeeInfo()
   if (myEmployeeInfo.value) {
@@ -226,6 +290,14 @@ onMounted(async () => {
     ])
     // 先获取部门信息，再获取同事列表（因为需要部门信息来确定主管）
     await fetchColleagues()
+  }
+  
+  // 如果是hr或company_admin，获取积分信息
+  if (canViewPoints.value) {
+    await Promise.all([
+      fetchPoints(),
+      fetchPointsHistory(1),
+    ])
   }
 })
 </script>
@@ -247,12 +319,63 @@ onMounted(async () => {
               <a-descriptions-item label="联系人姓名">{{ companyInfo.contactPersonName || '-' }}</a-descriptions-item>
               <a-descriptions-item label="联系电话">{{ maskContact(companyInfo.phone, 'phone') }}</a-descriptions-item>
               <a-descriptions-item label="联系邮箱">{{ maskContact(companyInfo.email, 'email') }}</a-descriptions-item>
+              <a-descriptions-item v-if="canViewPoints" label="当前积分">
+                <a-spin :spinning="pointsLoading">
+                  <span style="font-size: 18px; font-weight: bold; color: #1890ff;">
+                    {{ totalPoints.toFixed(2) }}
+                  </span>
+                </a-spin>
+              </a-descriptions-item>
             </a-descriptions>
             <a-empty v-else description="暂无公司信息" />
           </div>
         </a-spin>
 
         <a-divider />
+
+        <!-- 积分变动记录（仅hr和company_admin可见） -->
+        <div v-if="canViewPoints" style="margin-bottom: 24px">
+          <h3>积分变动记录</h3>
+          <a-spin :spinning="pointsHistoryLoading">
+            <a-table
+              :columns="[
+                { title: '变动日期', dataIndex: 'changeDate', key: 'changeDate', width: 120 },
+                { title: '变动原因', dataIndex: 'changeReasonText', key: 'changeReasonText', width: 120 },
+                { title: '变动说明', dataIndex: 'changeDescription', key: 'changeDescription', width: 200 },
+                { title: '关联员工', dataIndex: 'withEmployeeName', key: 'withEmployeeName', width: 120 },
+                { title: '积分变动', dataIndex: 'points', key: 'points', width: 120 },
+              ]"
+              :data-source="pointsHistory"
+              :loading="pointsHistoryLoading"
+              :pagination="{
+                current: pointsHistoryPageNum,
+                pageSize: pointsHistoryPageSize,
+                total: pointsHistoryTotal,
+                showSizeChanger: false,
+                showTotal: (total) => `共 ${total} 条`,
+              }"
+              row-key="id"
+              @change="(pag) => fetchPointsHistory(pag.current)"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'points'">
+                  <span style="color: #52c41a; font-weight: bold;">
+                    +{{ Number(record.points || 0).toFixed(2) }}
+                  </span>
+                </template>
+                <template v-else-if="column.key === 'changeDescription'">
+                  {{ record.changeDescription || '-' }}
+                </template>
+                <template v-else-if="column.key === 'withEmployeeName'">
+                  {{ record.withEmployeeName || '-' }}
+                </template>
+              </template>
+            </a-table>
+            <a-empty v-if="!pointsHistoryLoading && pointsHistory.length === 0" description="暂无积分变动记录" />
+          </a-spin>
+        </div>
+
+        <a-divider v-if="canViewPoints" />
 
         <!-- 部门信息 -->
         <a-spin :spinning="departmentLoading">

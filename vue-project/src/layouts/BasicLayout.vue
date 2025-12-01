@@ -37,7 +37,7 @@
               <a-menu-item v-if="isSystemAdmin" key="companies">公司管理</a-menu-item>
               <a-menu-item v-if="canAccessCompanyDetail" key="companyDetail">公司管理</a-menu-item>
               <a-menu-item v-if="canManageEmployees" key="employees">员工管理</a-menu-item>
-              <a-menu-item v-if="isHR || isSystemAdmin" key="evaluationTasks">
+              <a-menu-item v-if="isHR" key="evaluationTasks">
                 <a-badge v-if="pendingCount > 0" :count="pendingCount" :number-style="{ backgroundColor: '#ff4d4f' }">
                   <span>评价任务</span>
                 </a-badge>

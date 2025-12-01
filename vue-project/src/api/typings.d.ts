@@ -35,6 +35,18 @@ declare namespace API {
     message?: string
   }
 
+  type BaseResponseNumber = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  type BaseResponsePageCompanyPointsVO = {
+    code?: number
+    data?: PageCompanyPointsVO
+    message?: string
+  }
+
   type BaseResponseDepartment = {
     code?: number
     data?: Department
@@ -208,7 +220,26 @@ declare namespace API {
     email?: string
     industryCategory?: string
     industries?: string[]
+    totalPoints?: number
     createTime?: string
+  }
+
+  type CompanyPointsVO = {
+    id?: number
+    companyId?: number
+    points?: number
+    changeReason?: number
+    changeReasonText?: string
+    withEmployeeId?: number
+    withEmployeeName?: string
+    changeDescription?: string
+    changeDate?: string
+    createTime?: string
+  }
+
+  type PageCompanyPointsVO = {
+    records?: CompanyPointsVO[]
+    totalRow?: number
   }
 
   type DeleteRequest = {
@@ -395,6 +426,16 @@ declare namespace API {
 
   type getCompanyVOByIdParams = {
     id: number
+  }
+
+  type getCompanyPointsParams = {
+    companyId?: number
+  }
+
+  type getCompanyPointsHistoryParams = {
+    pageNum?: number
+    pageSize?: number
+    companyId?: number
   }
 
   type getDepartmentByIdParams = {
@@ -749,9 +790,13 @@ declare namespace API {
   type EvaluationVO = {
     id?: number
     employeeId?: number
+    companyId?: number
+    companyName?: string
     employeeName?: string
     evaluatorId?: number
     evaluatorName?: string
+    evaluatorCompanyId?: number
+    evaluatorCompanyName?: string
     comment?: string
     evaluationDate?: string
     evaluationType?: number
@@ -760,6 +805,8 @@ declare namespace API {
     evaluationPeriodText?: string
     periodYear?: number
     periodQuarter?: number
+    createTime?: string
+    updateTime?: string
     dimensionScores?: DimensionScoreVO[]
     tags?: TagVO[]
   }

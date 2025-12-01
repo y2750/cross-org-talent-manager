@@ -42,6 +42,21 @@ public class EvaluationVO implements Serializable {
     private String evaluatorName;
 
     /**
+     * 评价人所属公司ID
+     */
+    private Long evaluatorCompanyId;
+
+    /**
+     * 评价人所属公司名称
+     */
+    private String evaluatorCompanyName;
+
+    /**
+     * 被评价员工所属公司名称
+     */
+    private String companyName;
+
+    /**
      * 评价内容
      */
     private String comment;

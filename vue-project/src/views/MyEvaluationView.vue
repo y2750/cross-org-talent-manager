@@ -150,11 +150,11 @@
             </div>
           </a-descriptions-item>
           <a-descriptions-item label="评价标签" v-if="selectedEvaluation.tags">
-            <a-space>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
               <a-tag v-for="tag in selectedEvaluation.tags" :key="tag.tagId" :color="tag.tagType === 1 ? 'green' : 'orange'">
                 {{ tag.tagName }}
               </a-tag>
-            </a-space>
+            </div>
           </a-descriptions-item>
           <a-descriptions-item label="评价内容">
             {{ selectedEvaluation.comment || '无' }}

@@ -15,12 +15,16 @@ import com.crossorgtalentmanager.service.EmployeeProfileService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.crossorgtalentmanager.mapper.EmployeeProfileMapper;
+import com.crossorgtalentmanager.model.enums.PointsChangeReasonEnum;
+import com.crossorgtalentmanager.service.CompanyPointsService;
 import com.crossorgtalentmanager.service.CompanyService;
 import com.crossorgtalentmanager.service.EmployeeService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +49,11 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
     @Resource
     private EmployeeService employeeService;
 
+    @Resource
+    private CompanyPointsService companyPointsService;
+
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public Long addEmployeeProfile(EmployeeProfileAddRequest addRequest, User loginUser) {
         ThrowUtils.throwIf(addRequest == null, ErrorCode.PARAMS_ERROR, "参数不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户信息不存在");
@@ -94,6 +102,24 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
 
         boolean save = this.save(profile);
         ThrowUtils.throwIf(!save, ErrorCode.OPERATION_ERROR, "添加失败");
+
+        // 如果为离职员工建立档案（endDate不为null），则增加积分+10分
+        if (addRequest.getEndDate() != null) {
+            try {
+                companyPointsService.addPoints(
+                        profileCompanyId,
+                        BigDecimal.valueOf(10),
+                        PointsChangeReasonEnum.CREATE_PROFILE.getValue(),
+                        addRequest.getEmployeeId(),
+                        null); // changeDescription will be auto-generated
+                log.info("为离职员工建立档案，增加积分：companyId={}, employeeId={}, points=10",
+                        profileCompanyId, addRequest.getEmployeeId());
+            } catch (Exception e) {
+                log.error("添加积分失败：companyId={}, employeeId={}", profileCompanyId, addRequest.getEmployeeId(), e);
+                // 积分添加失败不影响档案创建，只记录日志
+            }
+        }
+
         return profile.getId();
     }
 

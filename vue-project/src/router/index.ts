@@ -104,7 +104,7 @@ const routes: RouteRecordRaw[] = [
     path: '/evaluation/tasks',
     name: 'evaluationTasks',
     component: () => import('../views/EvaluationTaskView.vue'),
-    meta: { requiresAuth: true, roles: ['hr', 'employee', 'admin'] },
+    meta: { requiresAuth: true, roles: ['hr', 'employee'] }, // admin不应该访问评价任务
   },
   {
     path: '/evaluation/my',

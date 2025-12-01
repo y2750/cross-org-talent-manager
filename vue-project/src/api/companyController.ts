@@ -88,3 +88,33 @@ export async function update(
     ...(options || {}),
   })
 }
+
+/** 获取公司的积分 GET /company/points */
+export async function getCompanyPoints(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getCompanyPointsParams,
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseNumber>('/company/points', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  })
+}
+
+/** 分页查询公司的积分变动记录 GET /company/points/history */
+export async function getCompanyPointsHistory(
+  // 叠加生成的Param类型 (非body参数swagger默认没有生成对象)
+  params: API.getCompanyPointsHistoryParams,
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponsePageCompanyPointsVO>('/company/points/history', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  })
+}
