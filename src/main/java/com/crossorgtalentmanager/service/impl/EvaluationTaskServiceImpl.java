@@ -8,11 +8,13 @@ import com.crossorgtalentmanager.model.dto.evaluation.EvaluationTaskQueryRequest
 import com.crossorgtalentmanager.model.entity.*;
 import com.crossorgtalentmanager.model.enums.EvaluationPeriodEnum;
 import com.crossorgtalentmanager.model.enums.EvaluationTypeEnum;
+import com.crossorgtalentmanager.model.enums.NotificationTypeEnum;
 import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 import com.crossorgtalentmanager.model.vo.EvaluationTaskVO;
 import com.crossorgtalentmanager.service.DepartmentService;
 import com.crossorgtalentmanager.service.EmployeeService;
 import com.crossorgtalentmanager.service.EvaluationTaskService;
+import com.crossorgtalentmanager.service.NotificationService;
 import com.crossorgtalentmanager.service.UserService;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
@@ -52,6 +54,9 @@ public class EvaluationTaskServiceImpl extends ServiceImpl<EvaluationTaskMapper,
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private NotificationService notificationService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -218,8 +223,22 @@ public class EvaluationTaskServiceImpl extends ServiceImpl<EvaluationTaskMapper,
                     evaluationTaskMapper.insert(task);
                     taskCount++;
 
-                    // 创建通知（如果notification表已实现）
-                    // createNotification(task, evaluatorId);
+                    // 为评价人创建评价任务通知
+                    EvaluationPeriodEnum periodEnum = EvaluationPeriodEnum
+                            .getEnumByValue(createRequest.getEvaluationPeriod());
+                    String periodText = periodEnum != null ? periodEnum.getText() : "评价";
+                    String title = "评价任务提醒";
+                    String employeeName = employee != null ? employee.getName() : "员工";
+                    String content = String.format("你有新的【%s】评价任务，需要对员工【%s】进行评价，截止日期：%s",
+                            periodText,
+                            employeeName,
+                            deadline.toLocalDate());
+                    notificationService.createNotification(
+                            evaluatorId,
+                            NotificationTypeEnum.EVALUATION_TASK.getValue(),
+                            title,
+                            content,
+                            task.getId());
                 }
             }
         }

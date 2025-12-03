@@ -49,4 +49,7 @@ public class EmployeeProfileUpdateRequest implements Serializable {
     /** 年薪（单位：元） */
     private BigDecimal annualSalary;
 
+    /** 公开范围（0=完全保密，1=对认证企业可见，2=公开） */
+    private Integer visibility;
+
 }

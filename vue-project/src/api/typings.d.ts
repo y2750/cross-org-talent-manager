@@ -909,4 +909,491 @@ declare namespace API {
     quarter?: number
     averageScore?: number
   }
+
+  // 投诉相关类型
+  type ComplaintAddRequest = {
+    evaluationId?: string
+    type?: number
+    title?: string
+    content?: string
+    evidenceImages?: string[]
+  }
+
+  type ComplaintQueryRequest = {
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+    id?: number
+    complainantId?: number
+    evaluationId?: number
+    companyId?: number
+    type?: number
+    status?: number
+    handlerId?: number
+  }
+
+  type ComplaintHandleRequest = {
+    id?: string
+    status?: number
+    handleResult?: string
+  }
+
+  type ComplaintVO = {
+    id?: number
+    complainantId?: number
+    complainantName?: string
+    evaluationId?: number
+    companyId?: number
+    companyName?: string
+    type?: number
+    typeText?: string
+    title?: string
+    content?: string
+    evidenceImages?: string[]
+    status?: number
+    statusText?: string
+    handlerId?: number
+    handlerName?: string
+    handleResult?: string
+    handleTime?: string
+    createTime?: string
+    updateTime?: string
+  }
+
+  type ComplaintDetailVO = {
+    id?: number
+    complainantId?: number
+    complainantName?: string
+    evaluationId?: number
+    companyId?: number
+    companyName?: string
+    type?: number
+    typeText?: string
+    title?: string
+    content?: string
+    evidenceImages?: string[]
+    status?: number
+    statusText?: string
+    handlerId?: number
+    handlerName?: string
+    handleResult?: string
+    handleTime?: string
+    createTime?: string
+    updateTime?: string
+    evaluation?: EvaluationDetailVO
+  }
+
+  type PageComplaintVO = {
+    records?: ComplaintVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponseComplaintDetailVO = {
+    code?: number
+    data?: ComplaintDetailVO
+    message?: string
+  }
+
+  type BaseResponsePageComplaintVO = {
+    code?: number
+    data?: PageComplaintVO
+    message?: string
+  }
+
+  type BaseResponseListString = {
+    code?: number
+    data?: string[]
+    message?: string
+  }
+
+  // 通知相关类型
+  type NotificationQueryRequest = {
+    id?: number
+    userId?: number
+    type?: number
+    status?: number
+    relatedId?: number
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+  }
+
+  type NotificationUpdateRequest = {
+    id?: number
+    status?: number
+  }
+
+  type NotificationVO = {
+    id?: number
+    userId?: number
+    type?: number
+    typeText?: string
+    title?: string
+    content?: string
+    relatedId?: number
+    status?: number
+    statusText?: string
+    createTime?: string
+    updateTime?: string
+    deadline?: string
+  }
+
+  type PageNotificationVO = {
+    records?: NotificationVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageNotificationVO = {
+    code?: number
+    data?: PageNotificationVO
+    message?: string
+  }
+
+  type BaseResponseNotificationVO = {
+    code?: number
+    data?: NotificationVO
+    message?: string
+  }
+
+  type NotificationListItemVO = {
+    id?: number
+    title?: string
+    status?: number
+    statusText?: string
+    createTime?: string
+  }
+
+  type PageNotificationListItemVO = {
+    records?: NotificationListItemVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageNotificationListItemVO = {
+    code?: number
+    data?: PageNotificationListItemVO
+    message?: string
+  }
+
+  type NotificationSendRequest = {
+    title?: string
+    content?: string
+    sendType?: number
+    username?: string
+    userRole?: string
+  }
+
+  type BaseResponseInteger = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  type BaseResponseInt = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  // 人才市场相关类型
+  type TalentSearchRequest = {
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+    keyword?: string
+    occupation?: string
+    occupations?: string[]
+    minAverageScore?: number
+    maxAverageScore?: number
+    includeTagIds?: number[]
+    excludeTagIds?: number[]
+    evaluationKeyword?: string
+    excludeReasonKeywords?: string[]
+    gender?: string
+    onlyLeft?: boolean
+    onlyWorking?: boolean
+    excludeMajorIncident?: boolean
+    minAttendanceRate?: number
+  }
+
+  type TalentVO = {
+    id?: number
+    name?: string
+    gender?: string
+    phone?: string
+    email?: string
+    photoUrl?: string
+    status?: boolean
+    currentCompanyId?: number
+    currentCompanyName?: string
+    latestOccupation?: string
+    averageScore?: number
+    evaluationCount?: number
+    profileCount?: number
+    positiveTags?: TalentTagStatVO[]
+    neutralTags?: TalentTagStatVO[]
+    bookmarked?: boolean
+  }
+
+  type TalentTagStatVO = {
+    tagId?: number
+    tagName?: string
+    count?: number
+  }
+
+  type TalentDetailVO = {
+    id?: number
+    name?: string
+    gender?: string
+    phone?: string
+    email?: string
+    photoUrl?: string
+    status?: boolean
+    currentCompanyId?: number
+    currentCompanyName?: string
+    latestOccupation?: string
+    averageScore?: number
+    evaluationCount?: number
+    profileCount?: number
+    positiveTags?: TalentTagStatVO[]
+    neutralTags?: TalentTagStatVO[]
+    dimensionScores?: Record<string, number>
+    profiles?: TalentProfileVO[]
+    evaluations?: TalentEvaluationVO[]
+    freeEvaluationCount?: number
+    unlockedEvaluationCount?: number
+    lockedEvaluationCount?: number
+    bookmarked?: boolean
+    companyPoints?: number
+    isOwnCompany?: boolean
+  }
+
+  type TalentProfileVO = {
+    profileId?: number
+    companyId?: number
+    companyName?: string
+    startDate?: string
+    endDate?: string
+    occupation?: string
+    attendanceRate?: number
+    hasMajorIncident?: boolean
+    reasonForLeaving?: string
+    performanceSummary?: string
+    annualSalary?: number
+  }
+
+  type TalentEvaluationVO = {
+    id?: number
+    companyId?: number
+    companyName?: string
+    evaluatorId?: number
+    evaluatorName?: string
+    evaluationType?: number
+    evaluationTypeName?: string
+    evaluationDate?: string
+    comment?: string
+    averageScore?: number
+    dimensionScores?: Record<string, number>
+    tags?: EvaluationTagVO[]
+    unlocked?: boolean
+    unlockCost?: number
+  }
+
+  type PageTalentVO = {
+    records?: TalentVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageTalentVO = {
+    code?: number
+    data?: PageTalentVO
+    message?: string
+  }
+
+  type BaseResponseTalentDetailVO = {
+    code?: number
+    data?: TalentDetailVO
+    message?: string
+  }
+
+  type EvaluationUnlockRequest = {
+    employeeId?: string
+    evaluationId?: string
+    evaluationIds?: string[]
+  }
+
+  type BaseResponseBigDecimal = {
+    code?: number
+    data?: number
+    message?: string
+  }
+
+  type TalentBookmarkRequest = {
+    employeeId?: string
+    remark?: string
+  }
+
+  type UnlockPriceConfigVO = {
+    id?: number
+    evaluationType?: number
+    evaluationTypeName?: string
+    pointsCost?: number
+    description?: string
+    isActive?: boolean
+  }
+
+  type BaseResponseListUnlockPriceConfigVO = {
+    code?: number
+    data?: UnlockPriceConfigVO[]
+    message?: string
+  }
+
+  type TalentViewLogRequest = {
+    employeeId?: string
+    viewSource?: string
+    searchKeyword?: string
+  }
+
+  type TalentViewLogVO = {
+    id?: number
+    companyId?: number
+    employeeId?: number
+    employeeName?: string
+    employeePhotoUrl?: string
+    latestOccupation?: string
+    viewTime?: string
+    viewSource?: string
+    searchKeyword?: string
+    viewDuration?: number
+  }
+
+  type PageTalentViewLogVO = {
+    records?: TalentViewLogVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageTalentViewLogVO = {
+    code?: number
+    data?: PageTalentViewLogVO
+    message?: string
+  }
+
+  type ViewStatisticsVO = {
+    totalViews?: number
+    todayViews?: number
+    weekViews?: number
+    monthViews?: number
+    uniqueTalentCount?: number
+    topViewedOccupations?: Record<string, number>
+    topViewedTags?: Record<string, number>
+  }
+
+  type BaseResponseViewStatisticsVO = {
+    code?: number
+    data?: ViewStatisticsVO
+    message?: string
+  }
+
+  type CompanyPreferenceRequest = {
+    preferredOccupations?: string[]
+    preferredTagIds?: number[]
+    excludedTagIds?: number[]
+    minScore?: number
+    excludeMajorIncident?: boolean
+    minAttendanceRate?: number
+  }
+
+  type CompanyPreferenceVO = {
+    id?: number
+    companyId?: number
+    preferredOccupations?: string[]
+    preferredTags?: EvaluationTagVO[]
+    excludedTags?: EvaluationTagVO[]
+    minScore?: number
+    excludeMajorIncident?: boolean
+    minAttendanceRate?: number
+  }
+
+  type BaseResponseCompanyPreferenceVO = {
+    code?: number
+    data?: CompanyPreferenceVO
+    message?: string
+  }
+
+  type TalentRecommendVO = {
+    id?: number
+    name?: string
+    gender?: string
+    phone?: string
+    email?: string
+    photoUrl?: string
+    status?: boolean
+    currentCompanyId?: number
+    currentCompanyName?: string
+    latestOccupation?: string
+    averageScore?: number
+    evaluationCount?: number
+    profileCount?: number
+    positiveTags?: TalentTagStatVO[]
+    neutralTags?: TalentTagStatVO[]
+    bookmarked?: boolean
+    recommendScore?: number
+    recommendReasons?: string[]
+    matchPercentage?: number
+    matchedOccupations?: string[]
+    matchedTags?: EvaluationTagVO[]
+  }
+
+  type PageTalentRecommendVO = {
+    records?: TalentRecommendVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageTalentRecommendVO = {
+    code?: number
+    data?: PageTalentRecommendVO
+    message?: string
+  }
+
+  type BaseResponseListTalentRecommendVO = {
+    code?: number
+    data?: TalentRecommendVO[]
+    message?: string
+  }
+
+  type TalentCompareRequest = {
+    employeeIds?: string[]
+  }
+
+  type TalentCompareVO = {
+    talents?: TalentDetailVO[]
+    dimensions?: string[]
+    comparisonSummary?: Record<string, any>
+  }
+
+  type BaseResponseTalentCompareVO = {
+    code?: number
+    data?: TalentCompareVO
+    message?: string
+  }
 }

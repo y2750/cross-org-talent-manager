@@ -47,4 +47,44 @@ public interface EmployeeProfileService extends IService<EmployeeProfile> {
      */
     Boolean removeById(Long id);
 
+    /**
+     * 根据权限获取员工档案VO（带权限控制和脱敏）
+     * 
+     * @param employeeProfile  档案实体
+     * @param viewerCompanyId  查看者公司ID（null表示员工本人）
+     * @param viewerEmployeeId 查看者员工ID（null表示非员工）
+     * @return 脱敏后的VO
+     */
+    EmployeeProfileVO getEmployeeProfileVOWithPermission(EmployeeProfile employeeProfile, Long viewerCompanyId,
+            Long viewerEmployeeId);
+
+    /**
+     * 检查是否可以查看档案详情
+     * 
+     * @param profileId       档案ID
+     * @param viewerCompanyId 查看者公司ID
+     * @param employeeId      员工ID
+     * @return 是否可以查看
+     */
+    Boolean canViewProfileDetail(Long profileId, Long viewerCompanyId, Long employeeId);
+
+    /**
+     * 分页查询员工档案（带权限控制和脱敏）
+     * 
+     * @param queryRequest 查询请求
+     * @param loginUser    登录用户
+     * @return 分页结果
+     */
+    com.mybatisflex.core.paginate.Page<EmployeeProfileVO> listEmployeeProfileVOByPageWithPermission(
+            EmployeeProfileQueryRequest queryRequest, User loginUser);
+
+    /**
+     * 根据ID获取员工档案VO（带权限控制和脱敏）
+     * 
+     * @param id        档案ID
+     * @param loginUser 登录用户
+     * @return 档案VO
+     */
+    EmployeeProfileVO getEmployeeProfileVOByIdWithPermission(Long id, User loginUser);
+
 }

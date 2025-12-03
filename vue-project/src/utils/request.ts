@@ -20,6 +20,12 @@ const instance: AxiosInstance = axios.create({
 instance.interceptors.request.use(
   (config) => {
     console.log('[Request]', config.method?.toUpperCase(), config.url)
+    
+    // 如果是 FormData，删除 Content-Type，让浏览器自动设置 multipart/form-data 边界
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type']
+    }
+    
     // 从 localStorage 获取用户信息以获取 token
     const userInfo = localStorage.getItem('userInfo')
     if (userInfo) {

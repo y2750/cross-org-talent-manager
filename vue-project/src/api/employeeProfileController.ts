@@ -106,3 +106,22 @@ export async function updateEmployeeProfile(
     ...(options || {}),
   })
 }
+
+/** 员工更新自己档案的公开范围 PUT /employeeProfile/update/visibility/me */
+export async function updateMyProfileVisibility(
+  body: { id: string | number; visibility: number },
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseBoolean>('/employeeProfile/update/visibility/me', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: {
+      ...body,
+      // 确保ID以字符串形式传递，避免JavaScript精度丢失
+      id: String(body.id),
+    },
+    ...(options || {}),
+  })
+}

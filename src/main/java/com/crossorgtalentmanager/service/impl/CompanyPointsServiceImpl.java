@@ -42,7 +42,8 @@ public class CompanyPointsServiceImpl extends ServiceImpl<CompanyPointsMapper, C
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public Long addPoints(Long companyId, BigDecimal points, Integer changeReason, Long withEmployeeId, String changeDescription) {
+    public Long addPoints(Long companyId, BigDecimal points, Integer changeReason, Long withEmployeeId,
+            String changeDescription) {
         ThrowUtils.throwIf(companyId == null || companyId <= 0, ErrorCode.PARAMS_ERROR, "企业ID不能为空");
         ThrowUtils.throwIf(points == null || points.compareTo(BigDecimal.ZERO) == 0,
                 ErrorCode.PARAMS_ERROR, "积分不能为0");
@@ -86,7 +87,8 @@ public class CompanyPointsServiceImpl extends ServiceImpl<CompanyPointsMapper, C
         log.info("企业积分增加成功：companyId={}, points={}, reason={}, totalPoints={}",
                 companyId, points, PointsChangeReasonEnum.getEnumByValue(changeReason) != null
                         ? PointsChangeReasonEnum.getEnumByValue(changeReason).getText()
-                        : changeReason, newTotal);
+                        : changeReason,
+                newTotal);
 
         return companyPoints.getId();
     }
@@ -144,7 +146,8 @@ public class CompanyPointsServiceImpl extends ServiceImpl<CompanyPointsMapper, C
             }
         }
 
-        String employeeInfo = employeeName != null ? employeeName : (withEmployeeId != null ? "员工ID:" + withEmployeeId : "");
+        String employeeInfo = employeeName != null ? employeeName
+                : (withEmployeeId != null ? "员工ID:" + withEmployeeId : "");
 
         switch (reasonEnum) {
             case CREATE_PROFILE:
@@ -166,4 +169,3 @@ public class CompanyPointsServiceImpl extends ServiceImpl<CompanyPointsMapper, C
         }
     }
 }
-

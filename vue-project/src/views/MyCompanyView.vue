@@ -281,6 +281,16 @@ const formatChangeReason = (reason: number | undefined): string => {
   return '-'
 }
 
+// 格式化积分显示
+const formatPoints = (points: number | undefined) => {
+  const pointsValue = Number(points || 0)
+  const isPositive = pointsValue >= 0
+  return {
+    text: `${isPositive ? '+' : ''}${pointsValue.toFixed(2)}`,
+    color: isPositive ? '#52c41a' : '#ff4d4f'
+  }
+}
+
 onMounted(async () => {
   await fetchMyEmployeeInfo()
   if (myEmployeeInfo.value) {
@@ -359,8 +369,13 @@ onMounted(async () => {
             >
               <template #bodyCell="{ column, record }">
                 <template v-if="column.key === 'points'">
-                  <span style="color: #52c41a; font-weight: bold;">
-                    +{{ Number(record.points || 0).toFixed(2) }}
+                  <span 
+                    :style="{ 
+                      color: formatPoints(record.points).color, 
+                      fontWeight: 'bold' 
+                    }"
+                  >
+                    {{ formatPoints(record.points).text }}
                   </span>
                 </template>
                 <template v-else-if="column.key === 'changeDescription'">

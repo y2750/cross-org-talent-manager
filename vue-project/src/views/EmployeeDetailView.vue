@@ -3,6 +3,12 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed, nextTick, watch } 
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import axios from 'axios'
+import dayjs, { type Dayjs } from 'dayjs'
+import 'dayjs/locale/zh-cn'
+import zhCN from 'ant-design-vue/es/locale/zh_CN'
+
+// 设置 dayjs 为中文（确保在组件中使用中文）
+dayjs.locale('zh-cn')
 import * as employeeController from '@/api/employeeController'
 import * as userController from '@/api/userController'
 import * as departmentController from '@/api/departmentController'
@@ -10,6 +16,7 @@ import * as employeeProfileController from '@/api/employeeProfileController'
 import * as companyController from '@/api/companyController'
 import * as rewardPunishmentController from '@/api/rewardPunishmentController'
 import * as evaluationController from '@/api/evaluationController'
+import * as profileAccessRequestController from '@/api/profileAccessRequestController'
 import { useRole } from '@/composables/useRole'
 import { useUserStore } from '@/stores/userStore'
 import type { FormInstance } from 'ant-design-vue'
@@ -66,6 +73,9 @@ interface GroupedProfile {
   profiles: API.EmployeeProfileVO[]
 }
 
+// 展开的行keys（用于控制哪些行展开）
+const expandedRowKeys = ref<string[]>([])
+
 // 按公司分组的奖惩记录
 interface GroupedRewardPunishment {
   companyId: string
@@ -89,7 +99,7 @@ const rewardPunishmentForm = reactive({
   type: undefined as number | undefined,
   description: '',
   amount: undefined as number | undefined,
-  date: '',
+  date: undefined as Dayjs | undefined,
 })
 const rewardPunishmentAddModalVisible = ref(false)
 const isAddRewardPunishment = ref(false)
@@ -98,9 +108,26 @@ const rewardPunishmentAddForm = reactive({
   type: undefined as number | undefined,
   description: '',
   amount: undefined as number | undefined,
-  date: '',
+  date: undefined as Dayjs | undefined,
   companyId: undefined as string | undefined, // 用于新增时指定公司
 })
+
+// 请求授权相关
+const requestAccessModalVisible = ref(false)
+const requestAccessFormRef = ref<FormInstance>()
+const currentRequestProfile = ref<API.EmployeeProfileVO | null>(null)
+const requestAccessForm = reactive({
+  requestReason: '',
+  expireDays: 7 as number,
+})
+const requestAccessLoading = ref(false)
+
+// 过期时间选项
+const expireDaysOptions = [
+  { label: '7天', value: 7 },
+  { label: '30天', value: 30 },
+  { label: '3个月', value: 90 },
+]
 
 const groupedProfiles = computed<GroupedProfile[]>(() => {
   console.log('=== groupedProfiles 计算属性执行 ===')
@@ -202,8 +229,8 @@ const profileFormRef = ref<FormInstance>()
 const profileForm = reactive({
   id: undefined as number | undefined,
   companyId: undefined as number | undefined,
-  startDate: '',
-  endDate: '',
+  startDate: undefined as Dayjs | undefined,
+  endDate: undefined as Dayjs | undefined,
   performanceSummary: '',
   attendanceRate: undefined as number | undefined,
   hasMajorIncident: false,
@@ -391,7 +418,7 @@ const openAddRewardPunishment = async () => {
   rewardPunishmentAddForm.type = undefined
   rewardPunishmentAddForm.description = ''
   rewardPunishmentAddForm.amount = undefined
-  rewardPunishmentAddForm.date = ''
+  rewardPunishmentAddForm.date = undefined
   
   // 设置公司ID（使用员工当前所属公司）
   if (employeeInfo.value?.companyId) {
@@ -420,7 +447,7 @@ const openEditRewardPunishment = (record: API.RewardPunishmentVO) => {
   rewardPunishmentForm.type = record.type
   rewardPunishmentForm.description = record.description || ''
   rewardPunishmentForm.amount = record.amount ? Number(record.amount) : undefined
-  rewardPunishmentForm.date = record.date || ''
+  rewardPunishmentForm.date = record.date ? dayjs(record.date) : undefined
   rewardPunishmentEditModalVisible.value = true
 }
 
@@ -445,7 +472,7 @@ const handleSaveAddRewardPunishment = async () => {
       type: rewardPunishmentAddForm.type,
       description: rewardPunishmentAddForm.description || undefined,
       amount: rewardPunishmentAddForm.amount,
-      date: rewardPunishmentAddForm.date || undefined,
+      date: rewardPunishmentAddForm.date ? rewardPunishmentAddForm.date.format('YYYY-MM-DD') : undefined,
     } as any)
     
     if (result?.data?.code === 0) {
@@ -508,7 +535,7 @@ const handleSaveRewardPunishment = async () => {
       type: rewardPunishmentForm.type,
       description: rewardPunishmentForm.description || undefined,
       amount: rewardPunishmentForm.amount,
-      date: rewardPunishmentForm.date || undefined,
+      date: rewardPunishmentForm.date ? rewardPunishmentForm.date.format('YYYY-MM-DD') : undefined,
     } as any)
     
     if (result?.data?.code === 0) {
@@ -637,6 +664,12 @@ const fetchProfileList = async () => {
       if (profileList.value.length > 0 && profileList.value[0]) {
         console.log('第一条档案的 companyId:', profileList.value[0].companyId, '类型:', typeof profileList.value[0].companyId)
       }
+      
+      // 自动展开所有无法查看的档案行
+      expandedRowKeys.value = profileList.value
+        .filter(p => !canViewDetail(p))
+        .map(p => String(p.id || ''))
+        .filter(id => id !== '')
       
       // 更新公司筛选选项
       updateCompanyFilterOptions()
@@ -964,6 +997,14 @@ const handleConfirmFire = async () => {
       // 清空操作记录
       fireProcessOperations.value = []
       message.success('员工已成功解雇')
+      
+      // 触发事件，自动刷新评价任务和通知的红点提示
+      // 延迟一小段时间，确保后端已创建评价任务和通知
+      setTimeout(() => {
+        window.dispatchEvent(new Event('refreshPendingCount'))
+        window.dispatchEvent(new Event('refreshUnreadCount'))
+      }, 500)
+      
       router.push('/employees')
     } else {
       message.error(result?.data?.message || '解雇失败')
@@ -1139,13 +1180,13 @@ const endDateRules = [
   {
     validator: (_rule: any, value: any) => {
       // 离职日期可以为空
-      if (!value || (typeof value === 'string' && !value.trim())) {
+      if (!value) {
         return Promise.resolve()
       }
       
       // 只有当入职日期也有值时才进行日期比较
       const startDate = profileForm.startDate
-      if (startDate && typeof startDate === 'string' && startDate.trim() && value < startDate) {
+      if (startDate && value && value.isBefore(startDate, 'day')) {
         return Promise.reject('离职日期不能早于入职日期')
       }
       
@@ -1740,8 +1781,8 @@ const openAddProfile = async () => {
   isEditProfile.value = false
   profileForm.id = undefined
   profileForm.companyId = undefined
-  profileForm.startDate = ''
-  profileForm.endDate = ''
+  profileForm.startDate = undefined
+  profileForm.endDate = undefined
   profileForm.performanceSummary = ''
   profileForm.attendanceRate = undefined
   profileForm.hasMajorIncident = false
@@ -1762,8 +1803,89 @@ const openAddProfile = async () => {
 
 // 打开查看档案详情弹窗
 const openViewProfile = (profile: API.EmployeeProfileVO) => {
+  // 检查是否可以查看详情
+  if ((profile as any).canViewDetail === false) {
+    message.warning('您没有权限查看此档案的详细信息')
+    return
+  }
   currentProfile.value = profile
   profileDetailModalVisible.value = true
+}
+
+// 判断是否可以查看档案详情
+const canViewDetail = (profile: API.EmployeeProfileVO): boolean => {
+  return (profile as any).canViewDetail !== false
+}
+
+// 判断是否需要显示请求授权按钮
+const shouldShowRequestAccess = (profile: API.EmployeeProfileVO): boolean => {
+  // 如果已经可以查看，不需要请求授权
+  if ((profile as any).canViewDetail === true) {
+    return false
+  }
+  // 只有"对认证企业可见"的档案才需要请求授权
+  return (profile as any).visibility === 1
+}
+
+// 获取权限提示文本
+const getPermissionTip = (profile: API.EmployeeProfileVO): string => {
+  if ((profile as any).visibility === 0) {
+    return '此档案保密，不可查看'
+  }
+  if ((profile as any).visibility === 1 && (profile as any).canViewDetail === false) {
+    return '此档案需要授权后才能查看，请点击"请求授权"按钮'
+  }
+  return ''
+}
+
+// 打开请求授权弹窗
+const openRequestAccessModal = (profile: API.EmployeeProfileVO) => {
+  currentRequestProfile.value = profile
+  requestAccessForm.requestReason = ''
+  requestAccessForm.expireDays = 7
+  requestAccessModalVisible.value = true
+}
+
+// 提交授权请求
+const submitAccessRequest = async () => {
+  if (!currentRequestProfile.value || !employeeId.value) {
+    return
+  }
+
+  try {
+    await requestAccessFormRef.value?.validate()
+    requestAccessLoading.value = true
+
+    // 计算过期时间
+    const expireDate = new Date()
+    expireDate.setDate(expireDate.getDate() + requestAccessForm.expireDays)
+    const expireTime = expireDate.toISOString().replace('T', ' ').substring(0, 19)
+
+    const result = await profileAccessRequestController.createProfileAccessRequest({
+      employeeId: employeeId.value,
+      employeeProfileId: currentRequestProfile.value.id,
+      requestReason: requestAccessForm.requestReason,
+      expireTime: expireTime,
+    })
+
+    if (result?.data?.code === 0) {
+      message.success('授权请求已提交，等待员工审批')
+      requestAccessModalVisible.value = false
+      // 刷新档案列表
+      await fetchProfileList()
+    } else {
+      message.error(result?.data?.message || '提交失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to submit access request:', error)
+    if (error?.errorFields) {
+      // 表单验证错误
+      return
+    }
+    message.error(error?.response?.data?.message || '提交失败')
+  } finally {
+    requestAccessLoading.value = false
+  }
 }
 
 // 判断是否可以编辑档案
@@ -1807,8 +1929,8 @@ const openEditProfileFromDetail = () => {
   
   isEditProfile.value = true
   profileForm.id = currentProfile.value.id
-  profileForm.startDate = currentProfile.value.startDate || ''
-  profileForm.endDate = currentProfile.value.endDate || ''
+  profileForm.startDate = currentProfile.value.startDate ? dayjs(currentProfile.value.startDate) : undefined
+  profileForm.endDate = currentProfile.value.endDate ? dayjs(currentProfile.value.endDate) : undefined
   profileForm.performanceSummary = currentProfile.value.performanceSummary || ''
   profileForm.attendanceRate = currentProfile.value.attendanceRate
   profileForm.hasMajorIncident = currentProfile.value.hasMajorIncident || false
@@ -1857,8 +1979,8 @@ const handleSaveProfile = async () => {
       
       const result = await employeeProfileController.updateEmployeeProfile({
         id: profileForm.id,
-        startDate: profileForm.startDate || undefined,
-        endDate: profileForm.endDate || undefined,
+        startDate: profileForm.startDate ? profileForm.startDate.format('YYYY-MM-DD') : undefined,
+        endDate: profileForm.endDate ? profileForm.endDate.format('YYYY-MM-DD') : undefined,
         performanceSummary: profileForm.performanceSummary || undefined,
         attendanceRate: profileForm.attendanceRate,
         hasMajorIncident: profileForm.hasMajorIncident,
@@ -1900,8 +2022,8 @@ const handleSaveProfile = async () => {
       // 新增档案
       const addPayload: API.EmployeeProfileAddRequest = {
         employeeId: employeeId.value as any,
-        startDate: profileForm.startDate || undefined,
-        endDate: profileForm.endDate || undefined,
+        startDate: profileForm.startDate ? profileForm.startDate.format('YYYY-MM-DD') : undefined,
+        endDate: profileForm.endDate ? profileForm.endDate.format('YYYY-MM-DD') : undefined,
         performanceSummary: profileForm.performanceSummary || undefined,
         attendanceRate: profileForm.attendanceRate,
         hasMajorIncident: profileForm.hasMajorIncident,
@@ -2354,22 +2476,61 @@ onMounted(async () => {
                       { title: '职位', dataIndex: 'occupation', width: 120 },
                       { title: '年薪(万元)', dataIndex: 'annualSalary', width: 120 },
                       { title: '出勤率(%)', dataIndex: 'attendanceRate', width: 100 },
-                      { title: '操作', key: 'action', width: 100, align: 'center' },
+                      { title: '操作', key: 'action', width: 150, align: 'center' },
                     ]"
                     :data-source="group.profiles"
                     :pagination="false"
+                    row-key="id"
                     size="middle"
                     :bordered="true"
+                    :row-expandable="(record: API.EmployeeProfileVO) => !canViewDetail(record)"
+                    v-model:expandedRowKeys="expandedRowKeys"
+                    @expand="(expanded: boolean, record: API.EmployeeProfileVO) => {
+                      if (!expanded && !canViewDetail(record)) {
+                        // 如果用户尝试收起无法查看的档案行，立即重新展开
+                        nextTick(() => {
+                          const key = String(record.id || '')
+                          if (key && !expandedRowKeys.includes(key)) {
+                            expandedRowKeys.push(key)
+                          }
+                        })
+                      }
+                    }"
                   >
                     <template #bodyCell="{ column, record }">
                       <template v-if="column.dataIndex === 'annualSalary'">
                         {{ record.annualSalary ? record.annualSalary.toFixed(2) : '-' }}
                       </template>
                       <template v-else-if="column.key === 'action'">
-                        <a-button type="link" size="small" @click="openViewProfile(record)">
-                          查看
-                        </a-button>
+                        <div style="display: flex; gap: 8px; justify-content: center">
+                          <a-button
+                            v-if="canViewDetail(record)"
+                            type="link"
+                            size="small"
+                            @click="openViewProfile(record)"
+                          >
+                            查看
+                          </a-button>
+                          <a-button
+                            v-if="shouldShowRequestAccess(record)"
+                            type="primary"
+                            size="small"
+                            @click="openRequestAccessModal(record)"
+                          >
+                            请求授权
+                          </a-button>
+                        </div>
                       </template>
+                    </template>
+                    <template #expandedRowRender="{ record }">
+                      <a-alert
+                        v-if="!canViewDetail(record)"
+                        type="warning"
+                        :message="getPermissionTip(record)"
+                        show-icon
+                        style="margin: 8px 0"
+                        :closable="false"
+                      />
                     </template>
                   </a-table>
                   
@@ -2664,7 +2825,13 @@ onMounted(async () => {
                 { required: true, message: '请选择入职日期' }
               ]"
             >
-              <a-input v-model:value="profileForm.startDate" type="date" />
+              <a-date-picker 
+                v-model:value="profileForm.startDate" 
+                format="YYYY-MM-DD"
+                :locale="zhCN"
+                style="width: 100%"
+                placeholder="请选择入职日期"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -2673,7 +2840,13 @@ onMounted(async () => {
               name="endDate"
               :rules="endDateRules"
             >
-              <a-input v-model:value="profileForm.endDate" type="date" />
+              <a-date-picker 
+                v-model:value="profileForm.endDate" 
+                format="YYYY-MM-DD"
+                :locale="zhCN"
+                style="width: 100%"
+                placeholder="请选择离职日期"
+              />
             </a-form-item>
           </a-col>
           <a-col :span="12">
@@ -2826,7 +2999,13 @@ onMounted(async () => {
           name="date"
           :rules="[{ required: true, message: '请选择发生日期' }]"
         >
-          <a-input v-model:value="rewardPunishmentForm.date" type="date" />
+          <a-date-picker 
+            v-model:value="rewardPunishmentForm.date" 
+            format="YYYY-MM-DD"
+            :locale="zhCN"
+            style="width: 100%"
+            placeholder="请选择发生日期"
+          />
         </a-form-item>
         <a-form-item
           label="描述"
@@ -2850,6 +3029,60 @@ onMounted(async () => {
             style="width: 100%"
             placeholder="请输入金额"
           />
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- 请求授权对话框 -->
+    <a-modal
+      v-model:open="requestAccessModalVisible"
+      title="请求授权查看档案"
+      :confirm-loading="requestAccessLoading"
+      @ok="submitAccessRequest"
+      @cancel="requestAccessModalVisible = false"
+      width="600"
+    >
+      <a-form
+        ref="requestAccessFormRef"
+        :model="requestAccessForm"
+        layout="vertical"
+        :rules="{
+          requestReason: [{ required: true, message: '请输入请求原因', trigger: 'blur' }],
+          expireDays: [{ required: true, message: '请选择授权过期时间', trigger: 'change' }],
+        }"
+      >
+        <a-form-item label="档案信息">
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item label="公司">
+              {{ currentRequestProfile?.companyName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="职位">
+              {{ currentRequestProfile?.occupation || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="入职日期">
+              {{ currentRequestProfile?.startDate || '-' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-form-item>
+        <a-form-item label="请求原因" name="requestReason">
+          <a-textarea
+            v-model:value="requestAccessForm.requestReason"
+            placeholder="请输入请求查看此档案的原因"
+            :rows="4"
+            :maxlength="500"
+            show-count
+          />
+        </a-form-item>
+        <a-form-item label="授权过期时间" name="expireDays">
+          <a-radio-group v-model:value="requestAccessForm.expireDays">
+            <a-radio
+              v-for="option in expireDaysOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-radio>
+          </a-radio-group>
         </a-form-item>
       </a-form>
     </a-modal>
@@ -2880,7 +3113,13 @@ onMounted(async () => {
           name="date"
           :rules="[{ required: true, message: '请选择发生日期' }]"
         >
-          <a-input v-model:value="rewardPunishmentAddForm.date" type="date" />
+          <a-date-picker 
+            v-model:value="rewardPunishmentAddForm.date" 
+            format="YYYY-MM-DD"
+            :locale="zhCN"
+            style="width: 100%"
+            placeholder="请选择发生日期"
+          />
         </a-form-item>
         <a-form-item
           label="描述"
@@ -2966,6 +3205,60 @@ onMounted(async () => {
           {{ selectedEvaluation.comment || '无' }}
         </a-descriptions-item>
       </a-descriptions>
+    </a-modal>
+
+    <!-- 请求授权对话框 -->
+    <a-modal
+      v-model:open="requestAccessModalVisible"
+      title="请求授权查看档案"
+      :confirm-loading="requestAccessLoading"
+      @ok="submitAccessRequest"
+      @cancel="requestAccessModalVisible = false"
+      width="600"
+    >
+      <a-form
+        ref="requestAccessFormRef"
+        :model="requestAccessForm"
+        layout="vertical"
+        :rules="{
+          requestReason: [{ required: true, message: '请输入请求原因', trigger: 'blur' }],
+          expireDays: [{ required: true, message: '请选择授权过期时间', trigger: 'change' }],
+        }"
+      >
+        <a-form-item label="档案信息">
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item label="公司">
+              {{ currentRequestProfile?.companyName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="职位">
+              {{ currentRequestProfile?.occupation || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="入职日期">
+              {{ currentRequestProfile?.startDate || '-' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-form-item>
+        <a-form-item label="请求原因" name="requestReason">
+          <a-textarea
+            v-model:value="requestAccessForm.requestReason"
+            placeholder="请输入请求查看此档案的原因"
+            :rows="4"
+            :maxlength="500"
+            show-count
+          />
+        </a-form-item>
+        <a-form-item label="授权过期时间" name="expireDays">
+          <a-radio-group v-model:value="requestAccessForm.expireDays">
+            <a-radio
+              v-for="option in expireDaysOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-radio>
+          </a-radio-group>
+        </a-form-item>
+      </a-form>
     </a-modal>
   </div>
 </template>

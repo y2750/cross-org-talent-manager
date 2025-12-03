@@ -1,12 +1,20 @@
 <template>
   <div class="my-evaluation-container">
-    <a-page-header title="我的评价" @back="() => $router.push('/home')" />
-
     <a-spin :spinning="loading">
-      <a-row :gutter="24">
-        <!-- 左侧：评价列表 -->
-        <a-col :span="16">
-          <a-card title="评价记录" style="margin-bottom: 24px">
+      <a-card>
+        <template #title>
+          <a-tabs v-model:activeKey="activeTab" @change="handleTabChange" class="evaluation-tabs">
+            <a-tab-pane key="evaluation" tab="我的评价" />
+            <a-tab-pane key="complaints" tab="我的投诉" />
+          </a-tabs>
+        </template>
+
+        <!-- 我的评价标签页 -->
+        <div v-if="activeTab === 'evaluation'">
+          <a-row :gutter="24">
+            <!-- 左侧：评价列表 -->
+            <a-col :span="16">
+              <a-card title="评价记录" style="margin-bottom: 24px">
             <!-- 排序和筛选 -->
             <div style="margin-bottom: 16px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
               <span>排序方式：</span>
@@ -93,44 +101,128 @@
                 </template>
               </template>
             </a-table>
-          </a-card>
-        </a-col>
+              </a-card>
+            </a-col>
 
-        <!-- 右侧：雷达图 -->
-        <a-col :span="8">
-          <a-card title="五维评价雷达图">
-            <div style="margin-top: -20px;">
-              <div ref="radarChartRef" style="width: 100%; height: 400px"></div>
-              <!-- 综合平均评分 -->
-              <div v-if="overallAverageScore > 0" 
-                   style="margin-top: -34px; padding: 16px; background: white; border-radius: 4px; text-align: center; color: #666; font-size: 12px;">
-                综合平均评分: <span style="font-size: 12px; font-weight: bold; color: #1890ff;">{{ overallAverageScore.toFixed(2) }}</span>
-              </div>
+            <!-- 右侧：雷达图 -->
+            <a-col :span="8">
+              <a-card title="五维评价雷达图">
+                <div style="margin-top: -20px;">
+                  <div ref="radarChartRef" style="width: 100%; height: 400px"></div>
+                  <!-- 综合平均评分 -->
+                  <div v-if="overallAverageScore > 0" 
+                       style="margin-top: -34px; padding: 16px; background: white; border-radius: 4px; text-align: center; color: #666; font-size: 12px;">
+                    综合平均评分: <span style="font-size: 12px; font-weight: bold; color: #1890ff;">{{ overallAverageScore.toFixed(2) }}</span>
+                  </div>
+                </div>
+                <!-- 标签统计 -->
+                <div v-if="tagStatistics.length > 0" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0;">
+                  <div style="font-size: 14px; font-weight: 500; margin-bottom: 12px; color: #262626;">标签统计</div>
+                  <a-space wrap>
+                    <a-tag 
+                      v-for="tag in tagStatistics" 
+                      :key="tag.tagId" 
+                      :color="tag.tagType === 1 ? 'green' : 'orange'"
+                    >
+                      {{ tag.tagName }}×{{ tag.count }}
+                    </a-tag>
+                  </a-space>
+                </div>
+              </a-card>
+            </a-col>
+          </a-row>
+        </div>
+
+        <!-- 我的投诉标签页 -->
+        <div v-if="activeTab === 'complaints'">
+          <a-spin :spinning="complaintLoading">
+            <!-- 筛选 -->
+            <div style="margin-bottom: 16px; display: flex; gap: 16px; align-items: center;">
+              <span>状态筛选：</span>
+              <a-select
+                v-model:value="complaintFilterStatus"
+                placeholder="全部状态"
+                allow-clear
+                style="width: 150px"
+                @change="handleComplaintFilterChange"
+              >
+                <a-select-option :value="0">待处理</a-select-option>
+                <a-select-option :value="2">通过</a-select-option>
+                <a-select-option :value="3">已驳回</a-select-option>
+              </a-select>
             </div>
-            <!-- 标签统计 -->
-            <div v-if="tagStatistics.length > 0" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0;">
-              <div style="font-size: 14px; font-weight: 500; margin-bottom: 12px; color: #262626;">标签统计</div>
-              <a-space wrap>
-                <a-tag 
-                  v-for="tag in tagStatistics" 
-                  :key="tag.tagId" 
-                  :color="tag.tagType === 1 ? 'green' : 'orange'"
-                >
-                  {{ tag.tagName }}×{{ tag.count }}
-                </a-tag>
-              </a-space>
-            </div>
-          </a-card>
-        </a-col>
-      </a-row>
+
+            <a-table
+              :columns="[
+                { title: '投诉类型', key: 'type', width: 120 },
+                { title: '投诉标题', dataIndex: 'title', key: 'title', width: 200 },
+                { title: '被投诉公司', dataIndex: 'companyName', key: 'companyName', width: 150 },
+                { title: '投诉时间', key: 'createTime', width: 160 },
+                { title: '状态', key: 'status', width: 100, align: 'center' },
+                { title: '操作', key: 'operation', width: 100, align: 'center' },
+              ]"
+              :data-source="complaintList"
+              :pagination="{
+                current: complaintPagination.current,
+                pageSize: complaintPagination.pageSize,
+                total: complaintPagination.total,
+                showSizeChanger: true,
+                showTotal: (total: number) => `共 ${total} 条`,
+              }"
+              row-key="id"
+              size="middle"
+              :bordered="true"
+              @change="(pagination: any) => {
+                if (pagination.current) {
+                  fetchComplaints(pagination.current)
+                }
+                if (pagination.pageSize) {
+                  complaintPagination.pageSize = pagination.pageSize
+                  fetchComplaints(1)
+                }
+              }"
+            >
+              <template #bodyCell="{ column, record }">
+                <template v-if="column.key === 'type'">
+                  <a-tag>{{ getComplaintTypeText(record.type) }}</a-tag>
+                </template>
+                <template v-else-if="column.key === 'createTime'">
+                  {{ formatComplaintDateTime(record.createTime) }}
+                </template>
+                <template v-else-if="column.key === 'status'">
+                  <a-tag :color="getComplaintStatusColor(record.status)">
+                    {{ getComplaintStatusText(record.status) }}
+                  </a-tag>
+                </template>
+                <template v-else-if="column.key === 'operation'">
+                  <a-button type="link" size="small" @click="handleViewComplaintDetail(record)">
+                    查看详情
+                  </a-button>
+                </template>
+              </template>
+            </a-table>
+            
+            <a-empty
+              v-if="!complaintLoading && complaintList.length === 0"
+              description="暂无投诉记录"
+              style="padding: 40px"
+            />
+          </a-spin>
+        </div>
+      </a-card>
 
       <!-- 评价详情弹窗 -->
       <a-modal
         v-model:open="detailModalVisible"
         title="评价详情"
         width="700px"
-        :footer="null"
       >
+        <template #footer>
+          <a-space>
+            <a-button @click="handleComplaint(selectedEvaluation)">投诉</a-button>
+            <a-button @click="detailModalVisible = false">关闭</a-button>
+          </a-space>
+        </template>
         <a-descriptions :column="1" bordered v-if="selectedEvaluation">
           <a-descriptions-item label="评价类型">
             <a-tag :color="getEvaluationTypeColor(selectedEvaluation.evaluationType || 0)">
@@ -161,6 +253,108 @@
           </a-descriptions-item>
         </a-descriptions>
       </a-modal>
+
+      <!-- 投诉弹窗 -->
+      <a-modal
+        v-model:open="complaintModalVisible"
+        title="提交投诉"
+        width="600px"
+        @ok="handleSubmitComplaint"
+        :confirm-loading="complaintSubmitting"
+      >
+        <a-form :model="complaintForm" :rules="complaintRules" ref="complaintFormRef">
+          <a-form-item label="投诉类型" name="type">
+            <a-select v-model:value="complaintForm.type" placeholder="请选择投诉类型">
+              <a-select-option :value="1">恶意评价</a-select-option>
+              <a-select-option :value="2">虚假信息</a-select-option>
+              <a-select-option :value="3">其他</a-select-option>
+            </a-select>
+          </a-form-item>
+          <a-form-item label="投诉标题" name="title">
+            <a-input v-model:value="complaintForm.title" placeholder="请输入投诉标题" />
+          </a-form-item>
+          <a-form-item label="投诉内容" name="content">
+            <a-textarea
+              v-model:value="complaintForm.content"
+              placeholder="请输入投诉内容"
+              :rows="4"
+            />
+          </a-form-item>
+          <a-form-item label="证据图片">
+            <a-upload
+              v-model:file-list="complaintForm.evidenceImages"
+              list-type="picture-card"
+              :before-upload="beforeUpload"
+              @preview="handlePreview"
+              @remove="handleRemove"
+            >
+              <div v-if="complaintForm.evidenceImages.length < 5">
+                <PlusOutlined />
+                <div style="margin-top: 8px">上传</div>
+              </div>
+            </a-upload>
+          </a-form-item>
+        </a-form>
+      </a-modal>
+
+      <!-- 图片预览 -->
+      <a-modal
+        v-model:open="previewVisible"
+        :footer="null"
+        centered
+      >
+        <img alt="preview" style="width: 100%" :src="previewImage" />
+      </a-modal>
+
+      <!-- 投诉详情弹窗 -->
+      <a-modal
+        v-model:open="complaintDetailVisible"
+        title="投诉详情"
+        width="800px"
+        :footer="null"
+      >
+        <a-spin :spinning="complaintDetailLoading">
+          <a-descriptions bordered :column="1" v-if="selectedComplaint">
+            <a-descriptions-item label="投诉类型">
+              <a-tag>{{ selectedComplaint.typeText || getComplaintTypeText(selectedComplaint.type) }}</a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="投诉标题">
+              {{ selectedComplaint.title }}
+            </a-descriptions-item>
+            <a-descriptions-item label="投诉内容">
+              {{ selectedComplaint.content }}
+            </a-descriptions-item>
+            <a-descriptions-item label="被投诉公司">
+              {{ selectedComplaint.companyName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="证据图片" v-if="selectedComplaint.evidenceImages && selectedComplaint.evidenceImages.length > 0">
+              <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                <a-image
+                  v-for="(img, index) in selectedComplaint.evidenceImages"
+                  :key="index"
+                  :src="img"
+                  :width="100"
+                  :preview="true"
+                />
+              </div>
+            </a-descriptions-item>
+            <a-descriptions-item label="状态">
+              <a-tag :color="getComplaintStatusColor(selectedComplaint.status)">
+                {{ selectedComplaint.statusText || getComplaintStatusText(selectedComplaint.status) }}
+              </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="处理结果" v-if="selectedComplaint.handleResult">
+              {{ selectedComplaint.handleResult }}
+            </a-descriptions-item>
+            <a-descriptions-item label="处理时间" v-if="selectedComplaint.handleTime">
+              {{ formatComplaintDateTime(selectedComplaint.handleTime) }}
+            </a-descriptions-item>
+            <a-descriptions-item label="投诉时间">
+              {{ formatComplaintDateTime(selectedComplaint.createTime) }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-spin>
+      </a-modal>
     </a-spin>
   </div>
 </template>
@@ -168,18 +362,26 @@
 <script setup lang="ts">
 import { onMounted, ref, reactive, nextTick, watch, computed } from 'vue'
 import { message } from 'ant-design-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import * as evaluationController from '@/api/evaluationController'
 import * as employeeController from '@/api/employeeController'
 import * as companyController from '@/api/companyController'
+import * as complaintController from '@/api/complaintController'
 import { useUserStore } from '@/stores/userStore'
 import { onUnmounted } from 'vue'
 import * as echarts from 'echarts'
+import type { UploadProps, UploadFile } from 'ant-design-vue'
+import { getBase64 } from '@/utils/image'
+import type { FormInstance } from 'ant-design-vue'
 
 const userStore = useUserStore()
 const loading = ref(false)
 const radarChartRef = ref<HTMLDivElement>()
 let radarChart: echarts.ECharts | null = null
 // 存储当前悬浮的指标索引（用于雷达图tooltip）
+
+// 标签页
+const activeTab = ref<'evaluation' | 'complaints'>('evaluation')
 
 // 评价列表
 const evaluationList = ref<API.EvaluationVO[]>([])
@@ -201,6 +403,37 @@ const companyOptionsLoading = ref(false)
 // 详情弹窗
 const detailModalVisible = ref(false)
 const selectedEvaluation = ref<API.EvaluationVO | null>(null)
+
+// 投诉相关
+const complaintModalVisible = ref(false)
+const complaintFormRef = ref<FormInstance>()
+const complaintSubmitting = ref(false)
+const complaintForm = reactive({
+  type: undefined as number | undefined,
+  title: '',
+  content: '',
+  evidenceImages: [] as UploadFile[],
+})
+const complaintRules = {
+  type: [{ required: true, message: '请选择投诉类型', trigger: 'change' }],
+  title: [{ required: true, message: '请输入投诉标题', trigger: 'blur' }],
+  content: [{ required: true, message: '请输入投诉内容', trigger: 'blur' }],
+}
+const previewImage = ref('')
+const previewVisible = ref(false)
+
+// 我的投诉列表
+const complaintList = ref<API.ComplaintVO[]>([])
+const complaintLoading = ref(false)
+const complaintPagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+})
+const complaintFilterStatus = ref<number | undefined>(undefined)
+const complaintDetailVisible = ref(false)
+const selectedComplaint = ref<API.ComplaintDetailVO | null>(null)
+const complaintDetailLoading = ref(false)
 
 // 表格列定义
 const columns = [
@@ -250,10 +483,14 @@ const loadEvaluationList = async () => {
       employeeId: employeeId,
     }
 
-    // 添加排序参数
+    // 添加排序参数（默认按创建时间降序）
     if (sortField.value) {
       requestParams.sortField = sortField.value
       requestParams.sortOrder = sortOrder.value || 'descend'
+    } else {
+      // 如果没有选择排序字段，默认按创建时间降序
+      requestParams.sortField = 'create_time'
+      requestParams.sortOrder = 'descend'
     }
 
     // 添加筛选参数
@@ -687,11 +924,249 @@ const handleViewDetail = async (record: API.EvaluationVO) => {
   }
 }
 
+// 打开投诉弹窗
+const handleComplaint = (evaluation: API.EvaluationVO | null) => {
+  if (!evaluation || !evaluation.id) {
+    message.error('评价信息不存在')
+    return
+  }
+  // 检查评价是否在30天内
+  const evaluationDate = evaluation.evaluationDate ? new Date(evaluation.evaluationDate) : new Date()
+  const daysBetween = Math.floor((Date.now() - evaluationDate.getTime()) / (1000 * 60 * 60 * 24))
+  if (daysBetween > 30) {
+    message.error('只能对30天以内的评价进行投诉')
+    return
+  }
+  complaintForm.type = undefined
+  complaintForm.title = ''
+  complaintForm.content = ''
+  complaintForm.evidenceImages = []
+  complaintModalVisible.value = true
+}
+
+// 上传前处理
+const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+  const isImage = file.type?.startsWith('image/')
+  if (!isImage) {
+    message.error('只能上传图片文件')
+    return false
+  }
+  const isLt5M = file.size / 1024 / 1024 < 5
+  if (!isLt5M) {
+    message.error('图片大小不能超过5MB')
+    return false
+  }
+  return false // 阻止自动上传
+}
+
+// 预览图片
+const handlePreview = async (file: UploadFile) => {
+  if (!file.url && !file.preview) {
+    file.preview = await getBase64(file.originFileObj as File)
+  }
+  previewImage.value = file.url || file.preview || ''
+  previewVisible.value = true
+}
+
+// 移除图片
+const handleRemove = (file: UploadFile) => {
+  const index = complaintForm.evidenceImages.findIndex(item => item.uid === file.uid)
+  if (index > -1) {
+    complaintForm.evidenceImages.splice(index, 1)
+  }
+}
+
+// 提交投诉
+const handleSubmitComplaint = async () => {
+  if (!selectedEvaluation.value || !selectedEvaluation.value.id) {
+    message.error('评价信息不存在')
+    return
+  }
+  
+  try {
+    await complaintFormRef.value?.validate()
+    complaintSubmitting.value = true
+
+    // 先上传图片到腾讯云COS，获取图片URL
+    const evidenceImageUrls: string[] = []
+    const filesToUpload: File[] = []
+    
+    for (const file of complaintForm.evidenceImages) {
+      if (file.url && !file.url.startsWith('data:')) {
+        // 已经是URL（可能是之前上传过的）
+        evidenceImageUrls.push(file.url)
+      } else if (file.originFileObj) {
+        // 需要上传的文件
+        filesToUpload.push(file.originFileObj)
+      }
+    }
+
+    // 如果有需要上传的文件，先上传获取URL
+    if (filesToUpload.length > 0) {
+      try {
+        const uploadResult = await complaintController.uploadEvidenceImages(filesToUpload)
+        if (uploadResult?.data?.code === 0 && uploadResult.data.data) {
+          evidenceImageUrls.push(...uploadResult.data.data)
+        } else {
+          message.error(uploadResult?.data?.message || '图片上传失败')
+          return
+        }
+      } catch (uploadError: any) {
+        console.error('Failed to upload images:', uploadError)
+        message.error(uploadError?.response?.data?.message || uploadError?.message || '图片上传失败')
+        return
+      }
+    }
+
+    // 提交投诉，传递图片URL数组
+    const result = await complaintController.addComplaint({
+      evaluationId: String(selectedEvaluation.value.id), // 转换为字符串
+      type: complaintForm.type!,
+      title: complaintForm.title,
+      content: complaintForm.content,
+      evidenceImages: evidenceImageUrls,
+    })
+
+    if (result?.data?.code === 0) {
+      message.success('投诉提交成功')
+      complaintModalVisible.value = false
+      detailModalVisible.value = false
+      // 重置表单
+      complaintForm.type = undefined
+      complaintForm.title = ''
+      complaintForm.content = ''
+      complaintForm.evidenceImages = []
+      // 刷新投诉列表（如果在投诉标签页）
+      if (activeTab.value === 'complaints') {
+        fetchComplaints(1)
+      }
+    } else {
+      message.error(result?.data?.message || '投诉提交失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to submit complaint:', error)
+    if (error?.errorFields) {
+      // 表单验证错误
+      return
+    }
+    message.error(error?.response?.data?.message || '投诉提交失败')
+  } finally {
+    complaintSubmitting.value = false
+  }
+}
+
 // 表格分页变化
 const handleTableChange = (pag: any) => {
   pagination.current = pag.current
   pagination.pageSize = pag.pageSize
   loadEvaluationList()
+}
+
+// 标签页切换
+const handleTabChange = (key: string) => {
+  activeTab.value = key as 'evaluation' | 'complaints'
+  if (key === 'complaints') {
+    fetchComplaints(1)
+  }
+}
+
+// 获取投诉列表
+const fetchComplaints = async (page: number = 1) => {
+  try {
+    complaintLoading.value = true
+    const result = await complaintController.pageComplaint({
+      pageNum: page,
+      pageSize: complaintPagination.pageSize,
+      status: complaintFilterStatus.value,
+      sortField: 'create_time',
+      sortOrder: 'descend', // 按时间降序排列
+    } as any)
+    
+    if (result?.data?.code === 0 && result.data.data) {
+      complaintList.value = result.data.data.records || []
+      complaintPagination.total = Number(result.data.data.totalRow) || 0
+      complaintPagination.current = page
+    } else {
+      message.error(result?.data?.message || '获取投诉列表失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to fetch complaints:', error)
+    message.error(error?.response?.data?.message || '获取投诉列表失败')
+  } finally {
+    complaintLoading.value = false
+  }
+}
+
+// 投诉筛选变化
+const handleComplaintFilterChange = () => {
+  complaintPagination.current = 1
+  fetchComplaints(1)
+}
+
+// 获取投诉状态文本
+const getComplaintStatusText = (status: number | undefined): string => {
+  if (status === 0) return '待处理'
+  if (status === 2) return '通过'
+  if (status === 3) return '已驳回'
+  return '未知'
+}
+
+// 获取投诉状态颜色
+const getComplaintStatusColor = (status: number | undefined): string => {
+  if (status === 0) return 'orange'
+  if (status === 2) return 'green'
+  if (status === 3) return 'red'
+  return 'default'
+}
+
+// 获取投诉类型文本
+const getComplaintTypeText = (type: number | undefined): string => {
+  if (type === 1) return '恶意评价'
+  if (type === 2) return '虚假信息'
+  if (type === 3) return '其他'
+  return '未知'
+}
+
+// 格式化投诉日期时间
+const formatComplaintDateTime = (dateTime: string | undefined): string => {
+  if (!dateTime) return '-'
+  try {
+    const date = new Date(dateTime)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch (error) {
+    return dateTime
+  }
+}
+
+// 查看投诉详情
+const handleViewComplaintDetail = async (record: API.ComplaintVO) => {
+  if (!record.id) {
+    message.error('投诉ID不存在')
+    return
+  }
+  try {
+    complaintDetailLoading.value = true
+    const result = await complaintController.getComplaintDetail({
+      id: String(record.id), // 转换为字符串
+    })
+    if (result?.data?.code === 0) {
+      selectedComplaint.value = result.data.data || null
+      complaintDetailVisible.value = true
+    } else {
+      message.error(result?.data?.message || '获取投诉详情失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to load complaint detail:', error)
+    message.error(error?.response?.data?.message || '获取投诉详情失败')
+  } finally {
+    complaintDetailLoading.value = false
+  }
 }
 
 // 监听筛选条件变化，重新加载五维数据和标签统计
@@ -704,13 +1179,15 @@ watch(
 )
 
 onMounted(async () => {
-  await loadEvaluationList()
-  // 加载公司选项（在评价列表加载后）
-  await loadCompanyOptions()
-  // 加载五维评价数据（基于所有符合条件的评价，不分页）
-  await loadDimensionScores()
-  // 加载标签统计（基于所有符合条件的评价，不分页）
-  await loadTagStatistics()
+  if (activeTab.value === 'evaluation') {
+    await loadEvaluationList()
+    // 加载公司选项（在评价列表加载后）
+    await loadCompanyOptions()
+    // 加载五维评价数据（基于所有符合条件的评价，不分页）
+    await loadDimensionScores()
+    // 加载标签统计（基于所有符合条件的评价，不分页）
+    await loadTagStatistics()
+  }
 })
 
 // 组件卸载时销毁图表
@@ -724,7 +1201,11 @@ onUnmounted(() => {
 
 <style scoped>
 .my-evaluation-container {
-  padding: 24px;
+  padding: 0;
+}
+
+.evaluation-tabs :deep(.ant-tabs-tab) {
+  font-size: 16px;
 }
 </style>
 

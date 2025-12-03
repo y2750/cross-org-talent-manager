@@ -13,7 +13,7 @@
       z-index: 1000;
     "
   >
-    <p style="margin: 0">跨组织人才管理系统 © 2024 All Rights Reserved</p>
+    <p style="margin: 0">跨组织人才管理系统 © 2025 All Rights Reserved</p>
   </a-layout-footer>
 </template>
 

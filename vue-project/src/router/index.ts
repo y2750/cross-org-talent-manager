@@ -118,6 +118,42 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/CreateQuarterlyEvaluationView.vue'),
     meta: { requiresAuth: true, roles: ['employee', 'hr', 'admin'] },
   },
+  {
+    path: '/notifications',
+    name: 'notificationList',
+    component: () => import('../views/NotificationListView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/notifications/:id',
+    name: 'notificationDetail',
+    component: () => import('../views/NotificationDetailView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/complaints/management',
+    name: 'complaintManagement',
+    component: () => import('../views/ComplaintManagementView.vue'),
+    meta: { requiresAuth: true, roles: ['admin'] },
+  },
+  {
+    path: '/talent-market',
+    name: 'talentMarket',
+    component: () => import('../views/TalentMarketView.vue'),
+    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+  },
+  {
+    path: '/talent-market/detail/:employeeId',
+    name: 'talentMarketDetail',
+    component: () => import('../views/TalentMarketDetailView.vue'),
+    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+  },
+  {
+    path: '/talent-market/compare',
+    name: 'talentCompare',
+    component: () => import('../views/TalentCompareView.vue'),
+    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+  },
 ]
 
 const router = createRouter({

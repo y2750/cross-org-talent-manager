@@ -8,6 +8,10 @@ import * as departmentController from './departmentController'
 import * as companyController from './companyController'
 import * as userController from './userController'
 import * as employeeController from './employeeController'
+import * as notificationController from './notificationController'
+import * as complaintController from './complaintController'
+import * as talentMarketController from './talentMarketController'
+import * as contactAccessRequestController from './contactAccessRequestController'
 export default {
   rewardPunishmentController,
   employeeProfileController,
@@ -15,4 +19,8 @@ export default {
   companyController,
   userController,
   employeeController,
+  notificationController,
+  complaintController,
+  talentMarketController,
+  contactAccessRequestController,
 }

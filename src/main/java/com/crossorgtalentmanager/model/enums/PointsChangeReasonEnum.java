@@ -11,7 +11,8 @@ public enum PointsChangeReasonEnum {
     CREATE_PROFILE(1, "建立档案"),
     EMPLOYEE_EVALUATION(2, "员工评价"),
     RIGHTS_CONSUMPTION(3, "权益消耗"),
-    EVALUATION_APPEAL(4, "评价申诉");
+    EVALUATION_APPEAL(4, "评价申诉"),
+    UNLOCK_EVALUATION(5, "解锁评价");
 
     private final Integer value;
     private final String text;

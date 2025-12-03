@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onMounted, reactive, ref, computed, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
@@ -7,6 +7,8 @@ import * as companyController from '@/api/companyController'
 import * as employeeController from '@/api/employeeController'
 import * as employeeProfileController from '@/api/employeeProfileController'
 import * as rewardPunishmentController from '@/api/rewardPunishmentController'
+import * as profileAccessRequestController from '@/api/profileAccessRequestController'
+import type { FormInstance } from 'ant-design-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +58,9 @@ interface GroupedProfile {
   profiles: API.EmployeeProfileVO[]
 }
 
+// 展开的行keys（用于控制哪些行展开）
+const expandedRowKeys = ref<string[]>([])
+
 const groupedProfiles = computed<GroupedProfile[]>(() => {
   const groups = new Map<string, GroupedProfile>()
   
@@ -88,6 +93,23 @@ const currentRewardCompanyId = ref<string | undefined>(undefined)
 const currentRewardCompanyName = ref<string>('')
 const rewardPunishmentList = ref<API.RewardPunishmentVO[]>([])
 const rewardPunishmentLoading = ref(false)
+
+// 请求授权相关
+const requestAccessModalVisible = ref(false)
+const requestAccessFormRef = ref<FormInstance>()
+const currentRequestProfile = ref<API.EmployeeProfileVO | null>(null)
+const requestAccessForm = reactive({
+  requestReason: '',
+  expireDays: 7 as number,
+})
+const requestAccessLoading = ref(false)
+
+// 过期时间选项
+const expireDaysOptions = [
+  { label: '7天', value: 7 },
+  { label: '30天', value: 30 },
+  { label: '3个月', value: 90 },
+]
 
 // 筛选和搜索
 const showCurrentCompanyOnly = ref(false)
@@ -178,6 +200,13 @@ const fetchAllProfiles = async () => {
     
     if (result?.data?.code === 0 && result.data.data) {
       allProfiles.value = result.data.data.records || []
+      
+      // 自动展开所有无法查看的档案行
+      expandedRowKeys.value = allProfiles.value
+        .filter(p => !canViewDetail(p))
+        .map(p => String(p.id || ''))
+        .filter(id => id !== '')
+      
       // 提取公司列表
       const companyMap = new Map<string, { label: string; companyId: string }>()
       allProfiles.value.forEach((profile) => {
@@ -298,8 +327,89 @@ const handleSortChange = (field: 'startDate' | 'createTime' | 'annualSalary' | '
 
 // 查看档案详细信息
 const viewProfileDetail = (profile: API.EmployeeProfileVO) => {
+  // 检查是否可以查看详情
+  if (profile.canViewDetail === false) {
+    message.warning('您没有权限查看此档案的详细信息')
+    return
+  }
   currentProfileDetail.value = profile
   profileDetailModalVisible.value = true
+}
+
+// 判断是否可以查看档案详情
+const canViewDetail = (profile: API.EmployeeProfileVO): boolean => {
+  return profile.canViewDetail !== false
+}
+
+// 判断是否需要显示请求授权按钮
+const shouldShowRequestAccess = (profile: API.EmployeeProfileVO): boolean => {
+  // 如果已经可以查看，不需要请求授权
+  if (profile.canViewDetail === true) {
+    return false
+  }
+  // 只有"对认证企业可见"的档案才需要请求授权
+  return profile.visibility === 1
+}
+
+// 获取权限提示文本
+const getPermissionTip = (profile: API.EmployeeProfileVO): string => {
+  if (profile.visibility === 0) {
+    return '此档案已设置为完全保密，不可查看'
+  }
+  if (profile.visibility === 1 && profile.canViewDetail === false) {
+    return '此档案需要授权后才能查看，请点击"请求授权"按钮'
+  }
+  return ''
+}
+
+// 打开请求授权弹窗
+const openRequestAccessModal = (profile: API.EmployeeProfileVO) => {
+  currentRequestProfile.value = profile
+  requestAccessForm.requestReason = ''
+  requestAccessForm.expireDays = 7
+  requestAccessModalVisible.value = true
+}
+
+// 提交授权请求
+const submitAccessRequest = async () => {
+  if (!currentRequestProfile.value || !employeeId.value) {
+    return
+  }
+
+  try {
+    await requestAccessFormRef.value?.validate()
+    requestAccessLoading.value = true
+
+    // 计算过期时间
+    const expireDate = new Date()
+    expireDate.setDate(expireDate.getDate() + requestAccessForm.expireDays)
+    const expireTime = expireDate.toISOString().replace('T', ' ').substring(0, 19)
+
+    const result = await profileAccessRequestController.createProfileAccessRequest({
+      employeeId: employeeId.value,
+      employeeProfileId: currentRequestProfile.value.id,
+      requestReason: requestAccessForm.requestReason,
+      expireTime: expireTime,
+    })
+
+    if (result?.data?.code === 0) {
+      message.success('授权请求已提交，等待员工审批')
+      requestAccessModalVisible.value = false
+      // 刷新档案列表
+      await fetchProfileList()
+    } else {
+      message.error(result?.data?.message || '提交失败')
+    }
+  } catch (error: any) {
+    console.error('Failed to submit access request:', error)
+    if (error?.errorFields) {
+      // 表单验证错误
+      return
+    }
+    message.error(error?.response?.data?.message || '提交失败')
+  } finally {
+    requestAccessLoading.value = false
+  }
 }
 
 // 查看奖惩记录
@@ -495,7 +605,7 @@ onMounted(async () => {
                   { title: '年薪', dataIndex: 'annualSalary', width: 120 },
                   { title: '出勤率', dataIndex: 'attendanceRate', width: 100 },
                   { title: '重大事故', dataIndex: 'hasMajorIncident', width: 100 },
-                  { title: '操作', key: 'operation', width: 100, align: 'center' },
+                  { title: '操作', key: 'operation', width: 150, align: 'center' },
                 ]"
                 :data-source="group.profiles"
                 :loading="profileLoading"
@@ -503,6 +613,19 @@ onMounted(async () => {
                 row-key="id"
                 size="middle"
                 :bordered="true"
+                :row-expandable="(record: API.EmployeeProfileVO) => !canViewDetail(record)"
+                v-model:expandedRowKeys="expandedRowKeys"
+                @expand="(expanded: boolean, record: API.EmployeeProfileVO) => {
+                  if (!expanded && !canViewDetail(record)) {
+                    // 如果用户尝试收起无法查看的档案行，立即重新展开
+                    nextTick(() => {
+                      const key = String(record.id || '')
+                      if (key && !expandedRowKeys.includes(key)) {
+                        expandedRowKeys.push(key)
+                      }
+                    })
+                  }
+                }"
               >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.dataIndex === 'annualSalary'">
@@ -518,10 +641,35 @@ onMounted(async () => {
                     {{ record[column.dataIndex] || '-' }}
                   </template>
                   <template v-else-if="column.key === 'operation'">
-                    <a-button type="link" size="small" @click="viewProfileDetail(record)">
-                      查看详情
-                    </a-button>
+                    <div style="display: flex; gap: 8px; justify-content: center">
+                      <a-button
+                        v-if="canViewDetail(record)"
+                        type="link"
+                        size="small"
+                        @click="viewProfileDetail(record)"
+                      >
+                        查看详情
+                      </a-button>
+                      <a-button
+                        v-if="shouldShowRequestAccess(record)"
+                        type="primary"
+                        size="small"
+                        @click="openRequestAccessModal(record)"
+                      >
+                        请求授权
+                      </a-button>
+                    </div>
                   </template>
+                </template>
+                <template #expandedRowRender="{ record }">
+                  <a-alert
+                    v-if="!canViewDetail(record)"
+                    type="warning"
+                    :message="getPermissionTip(record)"
+                    show-icon
+                    style="margin: 8px 0"
+                    :closable="false"
+                  />
                 </template>
               </a-table>
               
@@ -543,6 +691,60 @@ onMounted(async () => {
         </a-card>
       </a-layout-content>
     </a-layout>
+
+    <!-- 请求授权对话框 -->
+    <a-modal
+      v-model:open="requestAccessModalVisible"
+      title="请求授权查看档案"
+      :confirm-loading="requestAccessLoading"
+      @ok="submitAccessRequest"
+      @cancel="requestAccessModalVisible = false"
+      width="600"
+    >
+      <a-form
+        ref="requestAccessFormRef"
+        :model="requestAccessForm"
+        layout="vertical"
+        :rules="{
+          requestReason: [{ required: true, message: '请输入请求原因', trigger: 'blur' }],
+          expireDays: [{ required: true, message: '请选择授权过期时间', trigger: 'change' }],
+        }"
+      >
+        <a-form-item label="档案信息">
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item label="公司">
+              {{ currentRequestProfile?.companyName || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="职位">
+              {{ currentRequestProfile?.occupation || '-' }}
+            </a-descriptions-item>
+            <a-descriptions-item label="入职日期">
+              {{ currentRequestProfile?.startDate || '-' }}
+            </a-descriptions-item>
+          </a-descriptions>
+        </a-form-item>
+        <a-form-item label="请求原因" name="requestReason">
+          <a-textarea
+            v-model:value="requestAccessForm.requestReason"
+            placeholder="请输入请求查看此档案的原因"
+            :rows="4"
+            :maxlength="500"
+            show-count
+          />
+        </a-form-item>
+        <a-form-item label="授权过期时间" name="expireDays">
+          <a-radio-group v-model:value="requestAccessForm.expireDays">
+            <a-radio
+              v-for="option in expireDaysOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-radio>
+          </a-radio-group>
+        </a-form-item>
+      </a-form>
+    </a-modal>
 
     <!-- 档案详细信息对话框 -->
     <a-modal

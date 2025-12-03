@@ -63,4 +63,10 @@ public class EmployeeProfileVO implements Serializable {
 
     /** 该公司的奖惩记录列表（仅用于员工查看自己的档案时） */
     private java.util.List<com.crossorgtalentmanager.model.vo.RewardPunishmentVO> rewardPunishments;
+
+    /** 公开范围（0=完全保密，1=对认证企业可见，2=公开） */
+    private Integer visibility;
+
+    /** 是否可以查看详情（用于前端判断是否显示查看按钮） */
+    private Boolean canViewDetail;
 }

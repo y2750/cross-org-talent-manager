@@ -32,7 +32,6 @@ import java.util.HashMap;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.ArrayList;
-import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 
 /**
  * 员工档案信息 控制层。
@@ -113,19 +112,21 @@ public class EmployeeProfileController {
 
     /**
      * 根据 id 获取员工档案包装类（VO）
+     * 应用权限控制和脱敏逻辑
      */
     @GetMapping("/get/vo")
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
-    public BaseResponse<EmployeeProfileVO> getEmployeeProfileVOById(long id) {
+    public BaseResponse<EmployeeProfileVO> getEmployeeProfileVOById(long id, HttpServletRequest request) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR);
-        EmployeeProfile profile = employeeProfileService.getById(id);
-        ThrowUtils.throwIf(profile == null, ErrorCode.NOT_FOUND_ERROR);
-        EmployeeProfileVO vo = employeeProfileService.getEmployeeProfileVO(profile);
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        EmployeeProfileVO vo = employeeProfileService.getEmployeeProfileVOByIdWithPermission(id, loginUser);
         return ResultUtils.success(vo);
     }
 
     /**
      * 分页查询员工档案（返回 VO 列表）
+     * 应用权限控制和脱敏逻辑
      */
     @PostMapping("/list/page/vo")
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
@@ -133,54 +134,53 @@ public class EmployeeProfileController {
             @RequestBody EmployeeProfileQueryRequest queryRequest,
             HttpServletRequest request) {
         ThrowUtils.throwIf(queryRequest == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(request);
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
+        Page<EmployeeProfileVO> voPage = employeeProfileService.listEmployeeProfileVOByPageWithPermission(
+                queryRequest, loginUser);
+        return ResultUtils.success(voPage);
+    }
 
-        // 验证登录用户并根据用户角色拼接公司过滤条件
+    /**
+     * 员工更新自己档案的公开范围
+     */
+    @PutMapping("/update/visibility/me")
+    public BaseResponse<Boolean> updateMyProfileVisibility(
+            @RequestBody com.crossorgtalentmanager.model.dto.employeeprofile.EmployeeProfileVisibilityUpdateRequest updateRequest,
+            HttpServletRequest request) {
+        ThrowUtils.throwIf(updateRequest == null || updateRequest.getId() == null,
+                ErrorCode.PARAMS_ERROR, "档案 ID 不能为空");
+        ThrowUtils.throwIf(updateRequest.getVisibility() == null,
+                ErrorCode.PARAMS_ERROR, "公开范围不能为空");
+
         User loginUser = userService.getLoginUser(request);
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR);
 
-        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
-        boolean isHr = UserRoleEnum.HR.getValue().equals(loginUser.getUserRole());
-        boolean isCompanyAdmin = UserRoleEnum.COMPANY_ADMIN.getValue().equals(loginUser.getUserRole());
-
-        if (!isAdmin) {
-            // 非系统管理员仅允许 HR 或 公司管理员 查询本公司数据
-            ThrowUtils.throwIf(!(isHr || isCompanyAdmin), ErrorCode.NO_AUTH_ERROR, "无权限");
-
-            Long loginCompanyId = loginUser.getCompanyId();
-            ThrowUtils.throwIf(loginCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
-
-            // 如果指定了 employeeId，验证该员工是否属于当前用户的公司
-            // 如果属于，则允许查询该员工在所有公司的档案（不限制 companyId）
-            Long employeeId = queryRequest.getEmployeeId();
-            if (employeeId != null && employeeId > 0) {
-                com.crossorgtalentmanager.model.entity.Employee employee = employeeService.getById(employeeId);
-                ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
-                ThrowUtils.throwIf(!loginCompanyId.equals(employee.getCompanyId()),
-                        ErrorCode.NO_AUTH_ERROR, "只能查询本公司员工的档案");
-                // 如果员工属于当前用户的公司，则不限制 companyId，允许查看该员工在所有公司的档案
-                // 保持请求中的 companyId（如果指定了）或设置为 null（查看所有公司）
-                // 不强制设置 companyId，让查询可以返回该员工在所有公司的档案
-            } else {
-                // 如果没有指定 employeeId，则只查询当前公司的档案
-                Long requestCompanyId = queryRequest.getCompanyId();
-                if (requestCompanyId != null && requestCompanyId.equals(loginCompanyId)) {
-                    // 使用请求中的companyId（例如解雇流程中需要查询特定公司的档案）
-                    queryRequest.setCompanyId(requestCompanyId);
-                } else {
-                    // 使用登录用户的companyId
-                    queryRequest.setCompanyId(loginCompanyId);
-                }
-            }
+        // 验证公开范围值
+        if (updateRequest.getVisibility() < 0 || updateRequest.getVisibility() > 2) {
+            throw new com.crossorgtalentmanager.exception.BusinessException(ErrorCode.PARAMS_ERROR, "公开范围值无效");
         }
 
-        long pageNum = queryRequest.getPageNum();
-        long pageSize = queryRequest.getPageSize();
-        Page<EmployeeProfile> page = employeeProfileService.page(Page.of(pageNum, pageSize),
-                employeeProfileService.getQueryWrapper(queryRequest));
-        Page<EmployeeProfileVO> voPage = new Page<>(pageNum, pageSize, page.getTotalRow());
-        List<EmployeeProfileVO> voList = employeeProfileService.getEmployeeProfileVOList(page.getRecords());
-        voPage.setRecords(voList);
-        return ResultUtils.success(voPage);
+        // 查询档案
+        EmployeeProfile profile = employeeProfileService.getById(updateRequest.getId());
+        ThrowUtils.throwIf(profile == null, ErrorCode.NOT_FOUND_ERROR, "档案不存在");
+
+        // 验证员工身份：只能更新自己的档案
+        com.crossorgtalentmanager.model.entity.Employee employee = employeeService.list(
+                com.mybatisflex.core.query.QueryWrapper.create().eq("user_id", loginUser.getId())).stream()
+                .findFirst().orElse(null);
+        ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "未找到员工信息");
+        ThrowUtils.throwIf(!profile.getEmployeeId().equals(employee.getId()),
+                ErrorCode.NO_AUTH_ERROR, "只能更新自己的档案");
+
+        // 只更新公开范围
+        EmployeeProfile profileToUpdate = new EmployeeProfile();
+        profileToUpdate.setId(updateRequest.getId());
+        profileToUpdate.setVisibility(updateRequest.getVisibility());
+
+        boolean update = employeeProfileService.updateById(profileToUpdate);
+        ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "更新失败");
+        return ResultUtils.success(true);
     }
 
     /**

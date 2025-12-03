@@ -19,7 +19,9 @@ import com.crossorgtalentmanager.model.enums.PointsChangeReasonEnum;
 import com.crossorgtalentmanager.service.CompanyPointsService;
 import com.crossorgtalentmanager.service.CompanyService;
 import com.crossorgtalentmanager.service.EmployeeService;
+import com.crossorgtalentmanager.service.ProfileAccessRequestService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -99,6 +101,8 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         profile.setOccupation(addRequest.getOccupation());
         profile.setAnnualSalary(addRequest.getAnnualSalary());
         profile.setOperatorId(loginUser.getId());
+        // 设置公开范围，默认为公开
+        profile.setVisibility(addRequest.getVisibility() != null ? addRequest.getVisibility() : 2);
 
         boolean save = this.save(profile);
         ThrowUtils.throwIf(!save, ErrorCode.OPERATION_ERROR, "添加失败");
@@ -165,6 +169,10 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         profileToUpdate.setAnnualSalary(updateRequest.getAnnualSalary());
         // 设置操作人员 ID（系统维护，不接受前端修改）
         profileToUpdate.setOperatorId(loginUser.getId());
+        // 更新公开范围
+        if (updateRequest.getVisibility() != null) {
+            profileToUpdate.setVisibility(updateRequest.getVisibility());
+        }
 
         boolean update = this.updateById(profileToUpdate);
         ThrowUtils.throwIf(!update, ErrorCode.OPERATION_ERROR, "更新失败");
@@ -275,6 +283,256 @@ public class EmployeeProfileServiceImpl extends ServiceImpl<EmployeeProfileMappe
         BeanUtil.copyProperties(profile, copy);
         copy.setIsDelete(!Boolean.TRUE.equals(copy.getIsDelete()));
         return updateById(copy);
+    }
+
+    @Resource
+    @Lazy
+    private ProfileAccessRequestService profileAccessRequestService;
+
+    @Override
+    public EmployeeProfileVO getEmployeeProfileVOWithPermission(EmployeeProfile employeeProfile, Long viewerCompanyId,
+            Long viewerEmployeeId) {
+        if (employeeProfile == null) {
+            return null;
+        }
+
+        EmployeeProfileVO vo = getEmployeeProfileVO(employeeProfile);
+        if (vo == null) {
+            return null;
+        }
+
+        // 如果查看者是员工本人，返回完整信息
+        if (viewerEmployeeId != null && viewerEmployeeId.equals(employeeProfile.getEmployeeId())) {
+            vo.setCanViewDetail(true);
+            return vo;
+        }
+
+        // 查询员工信息
+        com.crossorgtalentmanager.model.entity.Employee employee = employeeService
+                .getById(employeeProfile.getEmployeeId());
+        if (employee == null) {
+            vo.setCanViewDetail(false);
+            return vo;
+        }
+
+        // 如果查看者公司是员工所属公司，可以查看认证企业可见和公开的档案，但不能查看完全保密的档案
+        boolean isSameCompany = viewerCompanyId != null && viewerCompanyId.equals(employee.getCompanyId());
+        Integer visibility = employeeProfile.getVisibility();
+        if (visibility == null) {
+            visibility = 2; // 默认为公开
+        }
+
+        // 如果查看者公司是员工所属公司
+        if (isSameCompany) {
+            // 完全保密的档案，即使是同一公司也不能查看
+            if (visibility == 0) {
+                vo.setPerformanceSummary(null);
+                vo.setAttendanceRate(null);
+                vo.setHasMajorIncident(null);
+                vo.setReasonForLeaving(null);
+                vo.setOccupation(null);
+                vo.setAnnualSalary(null);
+                vo.setStartDate(null);
+                vo.setEndDate(null);
+                vo.setCanViewDetail(false);
+                return vo;
+            }
+            // 认证企业可见和公开的档案可以查看
+            vo.setCanViewDetail(true);
+            return vo;
+        }
+
+        // 如果查看者公司不是员工所属公司，需要检查权限
+        // 完全保密的档案，只显示有档案存在和入职离职日期，其他信息不显示
+        if (visibility == 0) {
+            vo.setPerformanceSummary(null);
+            vo.setAttendanceRate(null);
+            vo.setHasMajorIncident(null);
+            vo.setReasonForLeaving(null);
+            vo.setOccupation(null);
+            vo.setAnnualSalary(null);
+            // 入职和离职日期始终可见
+            // vo.setStartDate(null);
+            // vo.setEndDate(null);
+            vo.setCanViewDetail(false);
+            return vo;
+        }
+
+        // 对认证企业可见的档案，需要检查是否有已授权的请求
+        if (visibility == 1) {
+            boolean canAccess = profileAccessRequestService.canAccessProfile(
+                    employeeProfile.getId(), viewerCompanyId, employeeProfile.getEmployeeId());
+            if (!canAccess) {
+                // 只显示有档案存在和入职离职日期，其他信息不显示
+                vo.setPerformanceSummary(null);
+                vo.setAttendanceRate(null);
+                vo.setHasMajorIncident(null);
+                vo.setReasonForLeaving(null);
+                vo.setOccupation(null);
+                vo.setAnnualSalary(null);
+                // 入职和离职日期始终可见
+                // vo.setStartDate(null);
+                // vo.setEndDate(null);
+                vo.setCanViewDetail(false);
+                return vo;
+            }
+            vo.setCanViewDetail(true);
+        } else {
+            // 公开的档案可以查看
+            vo.setCanViewDetail(true);
+        }
+
+        return vo;
+    }
+
+    @Override
+    public Boolean canViewProfileDetail(Long profileId, Long viewerCompanyId, Long employeeId) {
+        if (profileId == null || employeeId == null) {
+            return false;
+        }
+
+        EmployeeProfile profile = this.getById(profileId);
+        if (profile == null || !profile.getEmployeeId().equals(employeeId)) {
+            return false;
+        }
+
+        // 如果查看者是员工本人，可以查看
+        // 这里需要从viewerCompanyId推断viewerEmployeeId，暂时通过查询员工来判断
+        com.crossorgtalentmanager.model.entity.Employee employee = employeeService.getById(employeeId);
+        if (employee == null) {
+            return false;
+        }
+
+        Integer visibility = profile.getVisibility();
+        if (visibility == null) {
+            visibility = 2; // 默认为公开
+        }
+
+        // 如果查看者公司是员工所属公司，可以查看认证企业可见和公开的档案，但不能查看完全保密的档案
+        if (viewerCompanyId != null && viewerCompanyId.equals(employee.getCompanyId())) {
+            // 完全保密的档案，即使是同一公司也不能查看
+            if (visibility == 0) {
+                return false;
+            }
+            // 认证企业可见和公开的档案可以查看
+            return true;
+        }
+
+        // 如果查看者公司不是员工所属公司
+        if (visibility == 0) {
+            // 完全保密，不能查看
+            return false;
+        }
+        if (visibility == 2) {
+            // 公开，可以查看
+            return true;
+        }
+        if (visibility == 1) {
+            // 对认证企业可见，需要检查是否有已授权的请求
+            return profileAccessRequestService.canAccessProfile(profileId, viewerCompanyId, employeeId);
+        }
+
+        return false;
+    }
+
+    @Override
+    public com.mybatisflex.core.paginate.Page<EmployeeProfileVO> listEmployeeProfileVOByPageWithPermission(
+            EmployeeProfileQueryRequest queryRequest, User loginUser) {
+        ThrowUtils.throwIf(queryRequest == null, ErrorCode.PARAMS_ERROR, "请求参数为空");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户信息不存在");
+
+        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        boolean isHr = UserRoleEnum.HR.getValue().equals(loginUser.getUserRole());
+        boolean isCompanyAdmin = UserRoleEnum.COMPANY_ADMIN.getValue().equals(loginUser.getUserRole());
+
+        if (!isAdmin) {
+            // 非系统管理员仅允许 HR 或 公司管理员 查询
+            ThrowUtils.throwIf(!(isHr || isCompanyAdmin), ErrorCode.NO_AUTH_ERROR, "无权限");
+
+            Long loginCompanyId = loginUser.getCompanyId();
+            ThrowUtils.throwIf(loginCompanyId == null, ErrorCode.NO_AUTH_ERROR, "操作人员无所属公司");
+
+            // 如果指定了 employeeId，允许查询该员工在所有公司的档案（不限制 companyId）
+            // 权限控制将在返回VO时根据档案公开范围和查看者公司进行判断
+            Long employeeId = queryRequest.getEmployeeId();
+            if (employeeId != null && employeeId > 0) {
+                com.crossorgtalentmanager.model.entity.Employee employee = employeeService.getById(employeeId);
+                ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
+                // 允许查询该员工在所有公司的档案，不限制 companyId
+                // 权限控制将在返回VO时根据档案公开范围和查看者公司进行判断
+                // 保持请求中的 companyId（如果指定了）或设置为 null（查看所有公司）
+            } else {
+                // 如果没有指定 employeeId，则只查询当前公司的档案
+                Long requestCompanyId = queryRequest.getCompanyId();
+                if (requestCompanyId != null && requestCompanyId.equals(loginCompanyId)) {
+                    // 使用请求中的companyId（例如解雇流程中需要查询特定公司的档案）
+                    queryRequest.setCompanyId(requestCompanyId);
+                } else {
+                    // 使用登录用户的companyId
+                    queryRequest.setCompanyId(loginCompanyId);
+                }
+            }
+        }
+
+        long pageNum = queryRequest.getPageNum();
+        long pageSize = queryRequest.getPageSize();
+        com.mybatisflex.core.paginate.Page<EmployeeProfile> page = this.page(
+                com.mybatisflex.core.paginate.Page.of(pageNum, pageSize),
+                this.getQueryWrapper(queryRequest));
+        com.mybatisflex.core.paginate.Page<EmployeeProfileVO> voPage = new com.mybatisflex.core.paginate.Page<>(
+                pageNum, pageSize, page.getTotalRow());
+
+        // 获取查看者信息
+        Long viewerCompanyId = loginUser.getCompanyId();
+        Long viewerEmployeeId = null;
+
+        // 如果指定了employeeId，判断查看者是否是员工本人
+        Long queryEmployeeId = queryRequest.getEmployeeId();
+        if (queryEmployeeId != null && queryEmployeeId > 0) {
+            // 查询员工信息，判断是否是查看者本人
+            com.crossorgtalentmanager.model.entity.Employee queryEmployee = employeeService.getById(queryEmployeeId);
+            if (queryEmployee != null && queryEmployee.getUserId() != null) {
+                // 如果查询的员工是查看者本人，设置viewerEmployeeId
+                if (queryEmployee.getUserId().equals(loginUser.getId())) {
+                    viewerEmployeeId = queryEmployeeId;
+                }
+            }
+        }
+
+        // 应用权限控制和脱敏逻辑
+        List<EmployeeProfileVO> voList = new ArrayList<>();
+        for (EmployeeProfile profile : page.getRecords()) {
+            EmployeeProfileVO vo = this.getEmployeeProfileVOWithPermission(
+                    profile, viewerCompanyId, viewerEmployeeId);
+            if (vo != null) {
+                voList.add(vo);
+            }
+        }
+
+        voPage.setRecords(voList);
+        return voPage;
+    }
+
+    @Override
+    public EmployeeProfileVO getEmployeeProfileVOByIdWithPermission(Long id, User loginUser) {
+        ThrowUtils.throwIf(id == null || id <= 0, ErrorCode.PARAMS_ERROR, "档案 ID 不能为空");
+        ThrowUtils.throwIf(loginUser == null, ErrorCode.NO_AUTH_ERROR, "用户信息不存在");
+
+        EmployeeProfile profile = this.getById(id);
+        ThrowUtils.throwIf(profile == null, ErrorCode.NOT_FOUND_ERROR, "档案不存在");
+
+        // 获取查看者信息
+        Long viewerCompanyId = loginUser.getCompanyId();
+
+        // 判断查看者是否是员工本人
+        Long viewerEmployeeId = null;
+        com.crossorgtalentmanager.model.entity.Employee employee = employeeService.getById(profile.getEmployeeId());
+        if (employee != null && employee.getUserId() != null && employee.getUserId().equals(loginUser.getId())) {
+            viewerEmployeeId = employee.getId();
+        }
+
+        // 应用权限控制和脱敏逻辑
+        return this.getEmployeeProfileVOWithPermission(profile, viewerCompanyId, viewerEmployeeId);
     }
 
 }
