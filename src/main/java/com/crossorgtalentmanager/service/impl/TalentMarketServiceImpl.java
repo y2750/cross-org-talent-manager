@@ -579,11 +579,34 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         Employee employee = employeeMapper.selectOneById(request.getEmployeeId());
         ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
 
-        // 检查是否已收藏
-        if (isBookmarked(companyId, request.getEmployeeId())) {
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, "已收藏该人才");
+        // 检查是否已收藏（包括已删除的记录，因为唯一约束包含所有记录）
+        TalentBookmark existingBookmark = bookmarkMapper.selectOneIncludingDeleted(companyId, request.getEmployeeId());
+
+        if (existingBookmark != null) {
+            Boolean isDelete = existingBookmark.getIsDelete();
+            log.info("收藏检查：companyId={}, employeeId={}, existingBookmark.id={}, isDelete={}, isDelete类型={}",
+                    companyId, request.getEmployeeId(), existingBookmark.getId(), isDelete,
+                    isDelete != null ? isDelete.getClass().getName() : "null");
+
+            // 判断记录是否已删除：isDelete 为 true 或 Boolean.TRUE 表示已删除
+            // 注意：MyBatis 可能将 tinyint(1) 映射为 Boolean，也可能映射为 Integer
+            boolean isDeleted = Boolean.TRUE.equals(isDelete) || (isDelete != null && isDelete);
+
+            if (!isDeleted) {
+                // 如果记录存在且未删除，说明已收藏
+                log.warn("尝试重复收藏：companyId={}, employeeId={}, bookmarkId={}, isDelete={}",
+                        companyId, request.getEmployeeId(), existingBookmark.getId(), isDelete);
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "已收藏该人才");
+            }
+            // 如果记录存在但已删除，则恢复并更新备注
+            log.info("恢复已删除的收藏记录：companyId={}, employeeId={}, bookmarkId={}",
+                    companyId, request.getEmployeeId(), existingBookmark.getId());
+            int updated = bookmarkMapper.restoreBookmark(companyId, request.getEmployeeId(), request.getRemark());
+            ThrowUtils.throwIf(updated <= 0, ErrorCode.OPERATION_ERROR, "恢复收藏记录失败");
+            return existingBookmark.getId();
         }
 
+        // 如果记录不存在，则插入新记录
         TalentBookmark bookmark = TalentBookmark.builder()
                 .companyId(companyId)
                 .employeeId(request.getEmployeeId())
@@ -649,50 +672,87 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(value = "unlockPriceConfigs", key = "'all'")
     public List<UnlockPriceConfigVO> getUnlockPriceConfigs() {
+        // 尝试从缓存获取
         try {
-            QueryWrapper query = QueryWrapper.create()
-                    .eq("is_active", true)
-                    .orderBy("evaluation_type", true);
-            List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
-
-            return configs.stream().map(config -> {
-                UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
-                vo.setEvaluationType(config.getEvaluationType());
-                vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
-                        ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
-                        : "未知");
-                vo.setPointsCost(config.getPointsCost());
-                vo.setDescription(config.getDescription());
-                return vo;
-            }).collect(Collectors.toList());
-        } catch (ClassCastException e) {
-            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
-            log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
             if (cacheManager != null) {
                 org.springframework.cache.Cache cache = cacheManager.getCache("unlockPriceConfigs");
                 if (cache != null) {
-                    cache.evict("all");
+                    org.springframework.cache.Cache.ValueWrapper wrapper = cache.get("all");
+                    if (wrapper != null) {
+                        Object cached = wrapper.get();
+                        if (cached instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<UnlockPriceConfigVO> cachedList = (List<UnlockPriceConfigVO>) cached;
+                            // 验证列表中的元素类型
+                            if (!cachedList.isEmpty() && cachedList.get(0) instanceof UnlockPriceConfigVO) {
+                                return cachedList;
+                            }
+                        }
+                        // 缓存数据格式错误，清除缓存
+                        log.warn("缓存数据格式错误，清除缓存并重新查询: unlockPriceConfigs");
+                        cache.evict("all");
+                    }
                 }
             }
-            // 重新查询（不使用缓存）
-            QueryWrapper query = QueryWrapper.create()
-                    .eq("is_active", true)
-                    .orderBy("evaluation_type", true);
-            List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
-
-            return configs.stream().map(config -> {
-                UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
-                vo.setEvaluationType(config.getEvaluationType());
-                vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
-                        ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
-                        : "未知");
-                vo.setPointsCost(config.getPointsCost());
-                vo.setDescription(config.getDescription());
-                return vo;
-            }).collect(Collectors.toList());
+        } catch (org.springframework.data.redis.serializer.SerializationException e) {
+            // 反序列化失败，清除缓存
+            log.warn("缓存反序列化失败，清除缓存并重新查询: unlockPriceConfigs, error={}", e.getMessage());
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("unlockPriceConfigs");
+                    if (cache != null) {
+                        cache.evict("all");
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: unlockPriceConfigs, error={}", evictEx.getMessage());
+            }
+        } catch (Exception e) {
+            // 捕获所有其他异常
+            log.warn("从缓存获取数据时发生异常，将重新查询: unlockPriceConfigs, error={}", e.getMessage());
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("unlockPriceConfigs");
+                    if (cache != null) {
+                        cache.evict("all");
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: unlockPriceConfigs, error={}", evictEx.getMessage());
+            }
         }
+
+        // 从数据库查询
+        QueryWrapper query = QueryWrapper.create()
+                .eq("is_active", true)
+                .orderBy("evaluation_type", true);
+        List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
+
+        List<UnlockPriceConfigVO> result = configs.stream().map(config -> {
+            UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
+            vo.setEvaluationType(config.getEvaluationType());
+            vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
+                    ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
+                    : "未知");
+            vo.setPointsCost(config.getPointsCost());
+            vo.setDescription(config.getDescription());
+            return vo;
+        }).collect(Collectors.toList());
+
+        // 将结果存入缓存
+        try {
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("unlockPriceConfigs");
+                if (cache != null) {
+                    cache.put("all", result);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("缓存数据失败: unlockPriceConfigs, error={}", e.getMessage());
+        }
+
+        return result;
     }
 
     @Override
@@ -708,52 +768,88 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(value = "evaluationTags", key = "'all'")
     public List<EvaluationTagVO> getAllTags() {
+        // 尝试从缓存获取
         try {
-            QueryWrapper query = QueryWrapper.create()
-                    .eq("is_active", true)
-                    .orderBy("type", true)
-                    .orderBy("sort_order", true);
-            List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
-
-            return tags.stream().map(tag -> {
-                EvaluationTagVO vo = new EvaluationTagVO();
-                vo.setId(tag.getId());
-                vo.setName(tag.getName());
-                vo.setType(tag.getType());
-                vo.setDescription(tag.getDescription());
-                vo.setSortOrder(tag.getSortOrder());
-                vo.setIsActive(tag.getIsActive());
-                return vo;
-            }).collect(Collectors.toList());
-        } catch (ClassCastException e) {
-            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
-            log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
             if (cacheManager != null) {
                 org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
                 if (cache != null) {
-                    cache.evict("all");
+                    org.springframework.cache.Cache.ValueWrapper wrapper = cache.get("all");
+                    if (wrapper != null) {
+                        Object cached = wrapper.get();
+                        if (cached instanceof List) {
+                            @SuppressWarnings("unchecked")
+                            List<EvaluationTagVO> cachedList = (List<EvaluationTagVO>) cached;
+                            // 验证列表中的元素类型
+                            if (!cachedList.isEmpty() && cachedList.get(0) instanceof EvaluationTagVO) {
+                                return cachedList;
+                            }
+                        }
+                        // 缓存数据格式错误，清除缓存
+                        log.warn("缓存数据格式错误，清除缓存并重新查询: evaluationTags");
+                        cache.evict("all");
+                    }
                 }
             }
-            // 重新查询（不使用缓存）
-            QueryWrapper query = QueryWrapper.create()
-                    .eq("is_active", true)
-                    .orderBy("type", true)
-                    .orderBy("sort_order", true);
-            List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
-
-            return tags.stream().map(tag -> {
-                EvaluationTagVO vo = new EvaluationTagVO();
-                vo.setId(tag.getId());
-                vo.setName(tag.getName());
-                vo.setType(tag.getType());
-                vo.setDescription(tag.getDescription());
-                vo.setSortOrder(tag.getSortOrder());
-                vo.setIsActive(tag.getIsActive());
-                return vo;
-            }).collect(Collectors.toList());
+        } catch (org.springframework.data.redis.serializer.SerializationException e) {
+            // 反序列化失败，清除缓存
+            log.warn("缓存反序列化失败，清除缓存并重新查询: evaluationTags, error={}", e.getMessage());
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                    if (cache != null) {
+                        cache.evict("all");
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: evaluationTags, error={}", evictEx.getMessage());
+            }
+        } catch (Exception e) {
+            // 捕获所有其他异常
+            log.warn("从缓存获取数据时发生异常，将重新查询: evaluationTags, error={}", e.getMessage());
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                    if (cache != null) {
+                        cache.evict("all");
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: evaluationTags, error={}", evictEx.getMessage());
+            }
         }
+
+        // 从数据库查询
+        QueryWrapper query = QueryWrapper.create()
+                .eq("is_active", true)
+                .orderBy("type", true)
+                .orderBy("sort_order", true);
+        List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
+
+        List<EvaluationTagVO> result = tags.stream().map(tag -> {
+            EvaluationTagVO vo = new EvaluationTagVO();
+            vo.setId(tag.getId());
+            vo.setName(tag.getName());
+            vo.setType(tag.getType());
+            vo.setDescription(tag.getDescription());
+            vo.setSortOrder(tag.getSortOrder());
+            vo.setIsActive(tag.getIsActive());
+            return vo;
+        }).collect(Collectors.toList());
+
+        // 将结果存入缓存
+        try {
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                if (cache != null) {
+                    cache.put("all", result);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("缓存数据失败: evaluationTags, error={}", e.getMessage());
+        }
+
+        return result;
     }
 
     @Override
@@ -1458,12 +1554,20 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         ThrowUtils.throwIf(!hasAccessPermission(loginUser), ErrorCode.NO_AUTH_ERROR, "无权访问人才市场");
         ThrowUtils.throwIf(request.getEmployeeId() == null, ErrorCode.PARAMS_ERROR, "员工ID不能为空");
 
-        Long companyId = loginUser.getCompanyId();
-        ThrowUtils.throwIf(companyId == null, ErrorCode.PARAMS_ERROR, "企业ID不能为空");
-
         // 检查员工是否存在
         Employee employee = employeeMapper.selectOneById(request.getEmployeeId());
         ThrowUtils.throwIf(employee == null, ErrorCode.NOT_FOUND_ERROR, "员工不存在");
+
+        // 确定公司ID：系统管理员使用被浏览员工所属的公司ID，其他角色使用登录用户所属的公司ID
+        Long companyId = loginUser.getCompanyId();
+        if (companyId == null && UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole())) {
+            // 系统管理员：使用被浏览员工所属的公司ID
+            companyId = employee.getCompanyId();
+            ThrowUtils.throwIf(companyId == null, ErrorCode.PARAMS_ERROR, "被浏览员工未分配公司，无法记录浏览记录");
+        } else {
+            // 非系统管理员：必须有所属公司
+            ThrowUtils.throwIf(companyId == null, ErrorCode.PARAMS_ERROR, "企业ID不能为空");
+        }
 
         // 查找是否已存在该员工的浏览记录（同一公司同一员工只保留一条记录）
         // 首先查询包括已删除的记录（因为唯一索引不包含is_delete字段）
@@ -1700,7 +1804,6 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(value = "companyPreference", key = "#loginUser.companyId", condition = "#loginUser.companyId != null")
     public CompanyPreferenceVO getPreference(User loginUser) {
         ThrowUtils.throwIf(!hasAccessPermission(loginUser), ErrorCode.NO_AUTH_ERROR, "无权访问人才市场");
 
@@ -1709,6 +1812,74 @@ public class TalentMarketServiceImpl implements TalentMarketService {
             return new CompanyPreferenceVO();
         }
 
+        // 尝试从缓存获取
+        boolean cacheError = false;
+        try {
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("companyPreference");
+                if (cache != null) {
+                    org.springframework.cache.Cache.ValueWrapper wrapper = cache.get(companyId);
+                    if (wrapper != null) {
+                        Object cached = wrapper.get();
+                        if (cached instanceof CompanyPreferenceVO) {
+                            return (CompanyPreferenceVO) cached;
+                        } else if (cached != null) {
+                            // 缓存数据格式错误，清除缓存
+                            log.warn("缓存数据格式错误，清除缓存并重新查询: companyId={}, cached类型={}",
+                                    companyId, cached.getClass().getName());
+                            cacheError = true;
+                            try {
+                                cache.evict(companyId);
+                            } catch (Exception evictEx) {
+                                log.warn("清除缓存失败: companyId={}, error={}", companyId, evictEx.getMessage());
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (ClassCastException e) {
+            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
+            log.warn("缓存数据格式错误，清除缓存并重新查询: companyId={}, error={}", companyId, e.getMessage());
+            cacheError = true;
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("companyPreference");
+                    if (cache != null) {
+                        cache.evict(companyId);
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: companyId={}, error={}", companyId, evictEx.getMessage());
+            }
+        } catch (Exception e) {
+            // 捕获所有其他异常，确保不会影响正常查询
+            log.warn("从缓存获取数据时发生异常，将重新查询: companyId={}, error={}", companyId, e.getMessage());
+            cacheError = true;
+            try {
+                if (cacheManager != null) {
+                    org.springframework.cache.Cache cache = cacheManager.getCache("companyPreference");
+                    if (cache != null) {
+                        cache.evict(companyId);
+                    }
+                }
+            } catch (Exception evictEx) {
+                log.warn("清除缓存失败: companyId={}, error={}", companyId, evictEx.getMessage());
+            }
+        }
+
+        // 如果缓存出错，确保清除缓存后再查询
+        if (cacheError && cacheManager != null) {
+            try {
+                org.springframework.cache.Cache cache = cacheManager.getCache("companyPreference");
+                if (cache != null) {
+                    cache.evict(companyId);
+                }
+            } catch (Exception e) {
+                log.warn("最终清除缓存失败: companyId={}, error={}", companyId, e.getMessage());
+            }
+        }
+
+        // 从数据库查询
         QueryWrapper query = QueryWrapper.create().eq("company_id", companyId);
         CompanyPreference preference = preferenceMapper.selectOneByQuery(query);
 
@@ -1716,7 +1887,21 @@ public class TalentMarketServiceImpl implements TalentMarketService {
             return new CompanyPreferenceVO();
         }
 
-        return convertToPreferenceVO(preference);
+        CompanyPreferenceVO result = convertToPreferenceVO(preference);
+
+        // 将结果存入缓存
+        try {
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("companyPreference");
+                if (cache != null) {
+                    cache.put(companyId, result);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("缓存数据失败: companyId={}, error={}", companyId, e.getMessage());
+        }
+
+        return result;
     }
 
     // ==================== 人才推荐功能实现 ====================
@@ -2193,17 +2378,25 @@ public class TalentMarketServiceImpl implements TalentMarketService {
             if (StrUtil.isNotBlank(preference.getExcludedTagIds())) {
                 request.setExcludeTagIds(JSONUtil.toList(preference.getExcludedTagIds(), Long.class));
             }
-            // 最低评分
-            request.setMinAverageScore(preference.getMinScore());
-            // 排除重大违纪
-            request.setExcludeMajorIncident(preference.getExcludeMajorIncident());
-            // 最低出勤率
-            request.setMinAttendanceRate(preference.getMinAttendanceRate());
+            // 最低评分（如果设置了才应用，避免过滤掉所有人才）
+            if (preference.getMinScore() != null && preference.getMinScore().compareTo(BigDecimal.ZERO) > 0) {
+                request.setMinAverageScore(preference.getMinScore());
+            }
+            // 排除重大违纪（如果设置了才应用）
+            if (preference.getExcludeMajorIncident() != null) {
+                request.setExcludeMajorIncident(preference.getExcludeMajorIncident());
+            }
+            // 最低出勤率（如果设置了才应用）
+            if (preference.getMinAttendanceRate() != null
+                    && preference.getMinAttendanceRate().compareTo(BigDecimal.ZERO) > 0) {
+                request.setMinAttendanceRate(preference.getMinAttendanceRate());
+            }
         }
 
         // 智能推荐默认排除本公司员工
         request.setExcludeOwnCompany(true);
 
+        // 如果没有设置任何筛选条件，默认按评分降序排序
         request.setSortField("averageScore");
         request.setSortOrder("desc");
 

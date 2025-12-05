@@ -24,7 +24,8 @@ public class RedisCacheManagerConfig {
                 objectMapper.registerModule(new JavaTimeModule());
 
                 // GenericJackson2JsonRedisSerializer 默认会在 JSON 中添加 @class 字段保存类型信息
-                // 这样可以正确反序列化泛型类型（如 List<T>）
+                // 这样可以正确反序列化泛型类型（如 List<T>）和复杂对象（如 CompanyPreferenceVO）
+                // 注意：不要使用 activateDefaultTyping，因为会改变序列化格式，导致与旧数据不兼容
                 GenericJackson2JsonRedisSerializer jsonSerializer = new GenericJackson2JsonRedisSerializer(
                                 objectMapper);
 

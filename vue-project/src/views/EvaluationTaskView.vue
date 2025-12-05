@@ -751,12 +751,21 @@ const handleViewDetail = async (record: any) => {
 
 // 刷新待评价数量
 const refreshPendingCount = async () => {
+  // 系统管理员不能查看评价任务，直接返回
+  if (isSystemAdmin()) {
+    return
+  }
+  
   try {
     const response = await evaluationTaskController.getPendingTaskCount()
     if (response?.data?.code === 0) {
       pendingCount.value = response.data.data || 0
     }
-  } catch (error) {
+  } catch (error: any) {
+    // 如果是权限错误（系统管理员不能查看评价任务），静默处理
+    if (error?.response?.data?.code === 40101 || error?.message?.includes('系统管理员不能查看评价任务')) {
+      return
+    }
     console.error('Failed to refresh pending count:', error)
   }
 }

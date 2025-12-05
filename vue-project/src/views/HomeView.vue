@@ -54,14 +54,21 @@ const loadUnreadCount = async () => {
 
 // 获取待评价任务数量
 const loadPendingCount = async () => {
-  if (isSystemAdmin.value) return // 系统管理员不显示评价任务
+  // 系统管理员不能查看评价任务，直接返回
+  if (userStore.userRole === 'admin') {
+    return
+  }
   
   try {
     const response = await evaluationTaskController.getPendingTaskCount()
     if (response?.data?.code === 0) {
       pendingTaskCount.value = response.data.data || 0
     }
-  } catch (error) {
+  } catch (error: any) {
+    // 如果是权限错误（系统管理员不能查看评价任务），静默处理
+    if (error?.response?.data?.code === 40101 || error?.message?.includes('系统管理员不能查看评价任务')) {
+      return
+    }
     console.error('Failed to load pending count:', error)
   }
 }
