@@ -47,5 +47,11 @@ public class CompanyPreferenceRequest implements Serializable {
      * 最低出勤率要求
      */
     private BigDecimal minAttendanceRate;
+
+    /**
+     * 具体要求描述
+     */
+    private String requirementDescription;
 }
+
 

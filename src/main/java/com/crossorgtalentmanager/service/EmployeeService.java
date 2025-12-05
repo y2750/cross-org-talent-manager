@@ -82,4 +82,17 @@ public interface EmployeeService extends IService<Employee> {
          */
         int batchAddToDepartment(java.util.List<Long> employeeIds, Long departmentId,
                         com.crossorgtalentmanager.model.entity.User loginUser);
+
+        /**
+         * 批量导入员工（从Excel文件）
+         * 
+         * @param file       Excel文件
+         * @param companyId  公司ID
+         * @param loginUser  登录用户
+         * @return 导入结果
+         */
+        com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult batchImportEmployees(
+                        org.springframework.web.multipart.MultipartFile file,
+                        Long companyId,
+                        com.crossorgtalentmanager.model.entity.User loginUser);
 }

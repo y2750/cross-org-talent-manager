@@ -47,3 +47,4 @@ public enum NotificationStatusEnum {
         return getEnumByValue(value) != null;
     }
 }
+

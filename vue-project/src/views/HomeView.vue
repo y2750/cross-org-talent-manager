@@ -33,7 +33,12 @@ const loading = ref(false)
 const isSystemAdmin = userStore.isSystemAdmin
 const isCompanyAdmin = userStore.isCompanyAdmin
 const isHR = userStore.isHR
-const isEmployee = computed(() => userStore.userRole === 'employee' || userStore.isNormalUser)
+// 只有 employee 角色才是员工，严格限制，只允许 employee 角色
+const isEmployee = computed(() => {
+  const role = userStore.userRole
+  // 只有明确的 employee 角色才是员工，排除所有其他角色
+  return role === 'employee'
+})
 
 // 获取未读通知数量
 const loadUnreadCount = async () => {
@@ -49,7 +54,7 @@ const loadUnreadCount = async () => {
 
 // 获取待评价任务数量
 const loadPendingCount = async () => {
-  if (isSystemAdmin) return // 系统管理员不显示评价任务
+  if (isSystemAdmin.value) return // 系统管理员不显示评价任务
   
   try {
     const response = await evaluationTaskController.getPendingTaskCount()
@@ -72,6 +77,13 @@ const quickLinks = computed(() => {
     visible: boolean
   }> = []
 
+  // 获取当前角色（在 computed 内部直接访问 userStore 的 computed 属性）
+  const currentRole = userStore.userRole
+  const isSysAdmin = userStore.isSystemAdmin
+  const isCompAdmin = userStore.isCompanyAdmin
+  const isHr = userStore.isHR
+  const isEmp = currentRole === 'employee'
+
   // 通知
   links.push({
     title: '通知中心',
@@ -83,7 +95,7 @@ const quickLinks = computed(() => {
   })
 
   // 评价任务（员工和HR可见）
-  if (isEmployee || isHR) {
+  if (isEmp || isHr) {
     links.push({
       title: '评价任务',
       icon: CheckCircleOutlined,
@@ -94,8 +106,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 我的档案（员工可见，且左侧菜单有显示）
-  if (isEmployee) {
+  // 我的档案（仅员工可见）
+  if (isEmp) {
     links.push({
       title: '我的档案',
       icon: FileTextOutlined,
@@ -105,8 +117,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 我的评价（员工可见，且左侧菜单有显示）
-  if (isEmployee) {
+  // 我的评价（仅员工可见）
+  if (isEmp) {
     links.push({
       title: '我的评价',
       icon: TrophyOutlined,
@@ -116,8 +128,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 更新资料（员工可见，且左侧菜单有显示）
-  if (isEmployee) {
+  // 更新资料（仅员工可见）
+  if (isEmp) {
     links.push({
       title: '更新资料',
       icon: SettingOutlined,
@@ -127,8 +139,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 我的公司（员工可见，且左侧菜单有显示）
-  if (isEmployee) {
+  // 我的公司（仅员工可见）
+  if (isEmp) {
     links.push({
       title: '我的公司',
       icon: BankOutlined,
@@ -138,8 +150,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 投诉处理（系统管理员可见）
-  if (isSystemAdmin) {
+  // 投诉处理（仅系统管理员可见）
+  if (isSysAdmin) {
     links.push({
       title: '投诉处理',
       icon: WarningOutlined,
@@ -150,7 +162,7 @@ const quickLinks = computed(() => {
   }
 
   // 人才市场（HR、公司管理员、系统管理员可见）
-  if (isHR || isCompanyAdmin || isSystemAdmin) {
+  if (isHr || isCompAdmin || isSysAdmin) {
     links.push({
       title: '人才市场',
       icon: SearchOutlined,
@@ -161,7 +173,7 @@ const quickLinks = computed(() => {
   }
 
   // 员工管理（HR和公司管理员可见，且左侧菜单有显示）
-  if (isHR || isCompanyAdmin || isSystemAdmin) {
+  if (isHr || isCompAdmin || isSysAdmin) {
     links.push({
       title: '员工管理',
       icon: TeamOutlined,
@@ -171,21 +183,21 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 公司管理（公司管理员和系统管理员可见，且左侧菜单有显示）
-  if (isCompanyAdmin || isSystemAdmin) {
+  // 公司管理（HR、公司管理员和系统管理员可见，且左侧菜单有显示）
+  if (isHr || isCompAdmin || isSysAdmin) {
     links.push({
-      title: isSystemAdmin ? '公司管理' : '公司详情',
+      title: isSysAdmin ? '公司管理' : '公司详情',
       icon: BankOutlined,
-      path: isSystemAdmin ? '/companies' : `/companies/${userStore.userInfo?.companyId}`,
+      path: isSysAdmin ? '/companies' : `/companies/${userStore.userInfo?.companyId}`,
       color: '#eb2f96',
       visible: true,
     })
   }
 
   // 用户管理（系统管理员和公司管理员可见，且左侧菜单有显示）
-  if (isSystemAdmin || isCompanyAdmin) {
+  if (isSysAdmin || isCompAdmin) {
     links.push({
-      title: isSystemAdmin ? '用户管理' : 'HR管理',
+      title: isSysAdmin ? '用户管理' : 'HR管理',
       icon: UserOutlined,
       path: '/users',
       color: '#13c2c2',
@@ -210,10 +222,10 @@ const greeting = computed(() => {
 
 // 获取用户角色文本
 const roleText = computed(() => {
-  if (isSystemAdmin) return '系统管理员'
-  if (isCompanyAdmin) return '公司管理员'
-  if (isHR) return 'HR'
-  if (isEmployee) return '员工'
+  if (isSystemAdmin.value) return '系统管理员'
+  if (isCompanyAdmin.value) return '公司管理员'
+  if (isHR.value) return 'HR'
+  if (isEmployee.value) return '员工'
   return '用户'
 })
 
@@ -232,7 +244,7 @@ onMounted(async () => {
         <div class="welcome-text">
           <h1 class="greeting">{{ greeting }}，{{ userStore.nickname || userStore.username }}！</h1>
           <p class="subtitle">欢迎使用跨组织人才管理系统</p>
-          <a-tag :color="isSystemAdmin ? 'red' : isCompanyAdmin ? 'blue' : isHR ? 'green' : 'default'" class="role-tag">
+          <a-tag :color="isSystemAdmin.value ? 'red' : isCompanyAdmin.value ? 'blue' : isHR.value ? 'green' : 'default'" class="role-tag">
             {{ roleText }}
           </a-tag>
         </div>
@@ -260,7 +272,7 @@ onMounted(async () => {
             </div>
           </a-card>
         </a-col>
-        <a-col v-if="(isEmployee || isHR) && !isSystemAdmin" :xs="24" :sm="12" :md="8" :lg="6">
+        <a-col v-if="(isEmployee.value || isHR.value) && !isSystemAdmin.value" :xs="24" :sm="12" :md="8" :lg="6">
           <a-card class="stat-card" :loading="loading" @click="router.push('/evaluation/tasks')">
             <div class="stat-content">
               <div class="stat-icon" style="background: #f6ffed; color: #52c41a;">

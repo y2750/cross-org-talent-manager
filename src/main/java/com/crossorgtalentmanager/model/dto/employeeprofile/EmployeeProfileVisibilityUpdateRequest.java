@@ -24,3 +24,4 @@ public class EmployeeProfileVisibilityUpdateRequest implements Serializable {
      */
     private Integer visibility;
 }
+

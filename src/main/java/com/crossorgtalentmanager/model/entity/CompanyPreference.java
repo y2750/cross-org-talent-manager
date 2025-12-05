@@ -68,6 +68,11 @@ public class CompanyPreference implements Serializable {
      */
     private BigDecimal minAttendanceRate;
 
+    /**
+     * 具体要求描述
+     */
+    private String requirementDescription;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
@@ -75,4 +80,5 @@ public class CompanyPreference implements Serializable {
     @Column(isLogicDelete = true)
     private Boolean isDelete;
 }
+
 

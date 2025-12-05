@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { message } from 'ant-design-vue'
+import { message, Modal } from 'ant-design-vue'
+import { UploadOutlined } from '@ant-design/icons-vue'
 import * as employeeController from '@/api/employeeController'
 import * as userController from '@/api/userController'
 import * as departmentController from '@/api/departmentController'
 import * as companyController from '@/api/companyController'
 import { useRole } from '@/composables/useRole'
 import { useUserStore } from '@/stores/userStore'
-import type { FormInstance } from 'ant-design-vue'
+import type { FormInstance, UploadProps, UploadFile } from 'ant-design-vue'
 
 const router = useRouter()
 
@@ -38,6 +39,13 @@ interface EmployeeTableData {
 const employeeFormRef = ref<FormInstance>()
 const tableLoading = ref(false)
 const modalVisible = ref(false)
+
+// 批量导入相关
+const importModalVisible = ref(false)
+const importResultVisible = ref(false)
+const importResult = ref<API.EmployeeBatchImportResult | null>(null)
+const importLoading = ref(false)
+const fileList = ref<UploadFile[]>([])
 
 const searchParams = reactive({
   pageNum: 1,
@@ -601,6 +609,83 @@ const filterCompanyOption = (input: string, option: any) => {
   return label.includes(input.toLowerCase())
 }
 
+// 批量导入员工
+const handleBatchImport = () => {
+  importModalVisible.value = true
+  fileList.value = []
+  importResult.value = null
+  importResultVisible.value = false
+}
+
+// 上传文件前的验证
+const beforeUpload: UploadProps['beforeUpload'] = (file) => {
+  const fileName = file.name.toLowerCase()
+  const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
+  if (!isExcel) {
+    message.error('只能上传 .xlsx 或 .xls 格式的Excel文件！')
+    return false
+  }
+  const isLt10M = file.size / 1024 / 1024 < 10
+  if (!isLt10M) {
+    message.error('文件大小不能超过 10MB！')
+    return false
+  }
+  return false // 阻止自动上传，手动控制
+}
+
+// 处理文件变化
+const handleFileChange = (info: { file: UploadFile; fileList: UploadFile[] }) => {
+  fileList.value = info.fileList
+}
+
+// 执行批量导入
+const executeBatchImport = async () => {
+  if (fileList.value.length === 0) {
+    message.error('请先选择要导入的Excel文件')
+    return
+  }
+
+  const file = fileList.value[0].originFileObj
+  if (!file) {
+    message.error('文件不存在')
+    return
+  }
+
+  try {
+    importLoading.value = true
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const result = await employeeController.batchImportEmployees(formData)
+    
+    if (result?.data?.code === 0 && result.data.data) {
+      importResult.value = result.data.data
+      importResultVisible.value = true
+      
+      const { totalRows, successCount, failCount } = result.data.data
+      message.success(`导入完成！共导入 ${totalRows} 条，成功 ${successCount} 条，失败 ${failCount} 条`)
+      
+      // 刷新员工列表
+      await fetchEmployeeList()
+    } else {
+      message.error(result?.data?.message || '批量导入失败')
+    }
+  } catch (error: any) {
+    console.error('批量导入失败:', error)
+    message.error(error?.response?.data?.message || '批量导入失败，请检查文件格式')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+// 关闭导入结果弹窗
+const closeImportResult = () => {
+  importResultVisible.value = false
+  importModalVisible.value = false
+  fileList.value = []
+  importResult.value = null
+}
+
 onMounted(() => {
   fetchEmployeeList()
   
@@ -652,10 +737,14 @@ onMounted(() => {
           />
         </a-col>
         <a-col :xs="24" :sm="24" :md="6">
-          <a-space class="filter-actions" wrap>
+          <a-space class="filter-actions">
             <a-button type="primary" @click="handleSearch">查询</a-button>
             <a-button @click="handleReset">重置</a-button>
             <a-button type="primary" @click="openAddModal">新增员工</a-button>
+            <a-button type="default" @click="handleBatchImport">
+              <template #icon><UploadOutlined /></template>
+              批量导入
+            </a-button>
           </a-space>
         </a-col>
       </a-row>
@@ -696,9 +785,76 @@ onMounted(() => {
       </a-table>
     </a-card>
 
+    <!-- 批量导入弹窗 -->
+    <a-modal
+      v-model:open="importModalVisible"
+      title="批量导入员工"
+      :width="800"
+      :confirm-loading="importLoading"
+      @ok="executeBatchImport"
+      @cancel="closeImportResult"
+    >
+      <div style="margin-bottom: 16px">
+        <p style="margin-bottom: 8px">
+          <strong>导入说明：</strong>
+        </p>
+        <ul style="padding-left: 20px; margin-bottom: 16px">
+          <li>请上传 .xlsx 或 .xls 格式的Excel文件</li>
+          <li>Excel文件第一行为表头，必须包含：姓名、身份证号、部门名、手机号、邮箱</li>
+          <li>从第二行开始为数据行</li>
+          <li>部门名为空或不存在时，员工将不分配部门</li>
+        </ul>
+        <a-upload
+          v-model:file-list="fileList"
+          :before-upload="beforeUpload"
+          :max-count="1"
+          accept=".xlsx,.xls"
+          @change="handleFileChange"
+        >
+          <a-button>
+            <template #icon><UploadOutlined /></template>
+            选择Excel文件
+          </a-button>
+        </a-upload>
+      </div>
+    </a-modal>
+
+    <!-- 导入结果弹窗 -->
+    <a-modal
+      v-model:open="importResultVisible"
+      title="导入结果"
+      :width="900"
+      :footer="null"
+      @cancel="closeImportResult"
+    >
+      <div v-if="importResult">
+        <a-alert
+          :message="`导入完成！共导入 ${importResult.totalRows} 条，成功 ${importResult.successCount} 条，失败 ${importResult.failCount} 条`"
+          :type="importResult.failCount === 0 ? 'success' : 'warning'"
+          style="margin-bottom: 16px"
+        />
+        
+        <a-tabs v-if="importResult.failCount > 0">
+          <a-tab-pane key="fail" tab="失败记录">
+            <a-table
+              :columns="[
+                { title: '行号', dataIndex: 'rowNumber', key: 'rowNumber', width: 80 },
+                { title: '姓名', dataIndex: 'name', key: 'name', width: 120 },
+                { title: '身份证号', dataIndex: 'idCardNumber', key: 'idCardNumber', width: 180 },
+                { title: '失败原因', dataIndex: 'reason', key: 'reason' },
+              ]"
+              :data-source="importResult.failItems || []"
+              :pagination="{ pageSize: 10 }"
+              size="small"
+            />
+          </a-tab-pane>
+        </a-tabs>
+      </div>
+    </a-modal>
+
     <!-- 新增员工表单 -->
     <a-modal
-      v-model:visible="modalVisible"
+      v-model:open="modalVisible"
       title="新增员工"
       ok-text="保存"
       cancel-text="取消"
@@ -775,7 +931,7 @@ onMounted(() => {
 
 .filter-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
 }
 

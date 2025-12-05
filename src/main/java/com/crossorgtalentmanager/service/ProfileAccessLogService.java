@@ -13,3 +13,4 @@ public interface ProfileAccessLogService extends IService<ProfileAccessLog> {
      */
     void logAccess(Long requestId, Long accessCompanyId, Long employeeId, Long employeeProfileId, String ipAddress);
 }
+

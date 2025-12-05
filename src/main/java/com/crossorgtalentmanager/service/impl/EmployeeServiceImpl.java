@@ -82,7 +82,7 @@ public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> i
         // 如果性别为空，根据身份证号自动推断
         if (gender == null || gender.trim().isEmpty()) {
             gender = inferGenderFromIdCard(idCardNumber);
-            ThrowUtils.throwIf(gender == null, ErrorCode.PARAMS_ERROR, "无法从身份证号推断性别，请检查身份证号格式");
+            ThrowUtils.throwIf(gender == null, ErrorCode.PARAMS_ERROR, "身份证号格式错误");
         }
         // 检查手机号是否合法
         ThrowUtils.throwIf(!phone.matches("^1[3456789]\\d{9}$"), ErrorCode.PARAMS_ERROR, "手机号格式不正确");
@@ -494,5 +494,266 @@ public class EmployeeServiceImpl extends ServiceImpl<EmployeeMapper, Employee> i
 
         log.info("批量添加到部门成功，添加员工数量: {}, 部门ID: {}, 受影响行数: {}", employeeIds.size(), departmentId, affectedRows);
         return affectedRows;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult batchImportEmployees(
+            org.springframework.web.multipart.MultipartFile file,
+            Long companyId,
+            com.crossorgtalentmanager.model.entity.User loginUser) {
+        ThrowUtils.throwIf(file == null || file.isEmpty(), ErrorCode.PARAMS_ERROR, "文件不能为空");
+        ThrowUtils.throwIf(companyId == null, ErrorCode.PARAMS_ERROR, "公司ID不能为空");
+
+        // 检查文件格式
+        String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || (!originalFilename.toLowerCase().endsWith(".xlsx")
+                && !originalFilename.toLowerCase().endsWith(".xls"))) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "文件格式不正确，请上传 .xlsx 或 .xls 格式的Excel文件");
+        }
+
+        com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult result = com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult
+                .createEmpty();
+
+        org.apache.poi.ss.usermodel.Workbook workbook = null;
+        try {
+            // 读取Excel文件
+            // 使用 WorkbookFactory 自动识别 .xls 和 .xlsx 格式
+            workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(file.getInputStream());
+            org.apache.poi.ss.usermodel.Sheet sheet = workbook.getSheetAt(0);
+
+            // 获取表头（第一行）
+            org.apache.poi.ss.usermodel.Row headerRow = sheet.getRow(0);
+            if (headerRow == null) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "Excel文件格式错误：缺少表头");
+            }
+
+            // 验证表头格式：姓名、身份证号、部门名、手机号、邮箱
+            String[] expectedHeaders = { "姓名", "身份证号", "部门名", "手机号", "邮箱" };
+            for (int i = 0; i < expectedHeaders.length; i++) {
+                org.apache.poi.ss.usermodel.Cell cell = headerRow.getCell(i);
+                String cellValue = cell != null ? getCellValueAsString(cell) : "";
+                if (!expectedHeaders[i].equals(cellValue.trim())) {
+                    throw new BusinessException(ErrorCode.PARAMS_ERROR,
+                            String.format("Excel文件格式错误：第%d列应为\"%s\"，实际为\"%s\"", i + 1, expectedHeaders[i], cellValue));
+                }
+            }
+
+            // 获取所有部门（按公司ID和部门名缓存）
+            QueryWrapper deptQueryWrapper = QueryWrapper.create()
+                    .eq("company_id", companyId)
+                    .eq("is_delete", false);
+            List<Department> allDepartments = departmentService.list(deptQueryWrapper);
+            Map<String, Long> departmentNameToId = allDepartments.stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            Department::getName,
+                            Department::getId,
+                            (a, b) -> a));
+
+            // 遍历数据行（从第2行开始，索引为1）
+            int totalRows = 0;
+            for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+                org.apache.poi.ss.usermodel.Row row = sheet.getRow(rowIndex);
+                if (row == null) {
+                    continue;
+                }
+
+                // 检查是否为空行
+                boolean isEmptyRow = true;
+                for (int colIndex = 0; colIndex < 5; colIndex++) {
+                    org.apache.poi.ss.usermodel.Cell cell = row.getCell(colIndex);
+                    if (cell != null && !getCellValueAsString(cell).trim().isEmpty()) {
+                        isEmptyRow = false;
+                        break;
+                    }
+                }
+                if (isEmptyRow) {
+                    continue;
+                }
+
+                totalRows++;
+                int currentRowNumber = rowIndex; // 行号（从1开始，不包括表头）
+
+                // 读取单元格数据
+                String name = getCellValueAsString(row.getCell(0)).trim();
+                String idCardNumber = getCellValueAsString(row.getCell(1)).trim();
+                String departmentName = getCellValueAsString(row.getCell(2)).trim();
+                String phone = getCellValueAsString(row.getCell(3)).trim();
+                String email = getCellValueAsString(row.getCell(4)).trim();
+
+                // 验证必填字段
+                if (name.isEmpty() || idCardNumber.isEmpty() || phone.isEmpty() || email.isEmpty()) {
+                    result.getFailItems().add(
+                            com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportFailItem
+                                    .builder()
+                                    .rowNumber(currentRowNumber)
+                                    .name(name)
+                                    .idCardNumber(idCardNumber)
+                                    .reason("必填字段不能为空：姓名、身份证号、手机号、邮箱")
+                                    .build());
+                    result.setFailCount(result.getFailCount() + 1);
+                    continue;
+                }
+
+                // 根据部门名查找部门ID
+                Long departmentId = null;
+                if (!departmentName.isEmpty()) {
+                    departmentId = departmentNameToId.get(departmentName);
+                    // 如果部门不存在，departmentId 保持为 null（符合需求）
+                }
+
+                // 检查是否存在同身份证号的员工
+                QueryWrapper employeeQueryWrapper = QueryWrapper.create()
+                        .eq("id_card_number", idCardNumber);
+                Employee existingEmployee = this.getOne(employeeQueryWrapper);
+
+                if (existingEmployee != null) {
+                    // 存在同身份证号员工
+                    if (name.equals(existingEmployee.getName())) {
+                        // 姓名相同
+                        if (!Boolean.TRUE.equals(existingEmployee.getStatus())) {
+                            // 员工状态为离职，可以重新入职
+                            try {
+                                // 更新员工信息
+                                existingEmployee.setName(name);
+                                String gender = inferGenderFromIdCard(idCardNumber);
+                                if (gender != null) {
+                                    existingEmployee.setGender(gender);
+                                }
+                                existingEmployee.setPhone(phone);
+                                existingEmployee.setEmail(email);
+                                existingEmployee.setCompanyId(companyId);
+                                existingEmployee.setDepartmentId(departmentId);
+                                existingEmployee.setStatus(EmployeeStatusEnum.NORMAL.getValue());
+                                this.updateById(existingEmployee);
+
+                                result.getSuccessItems().add(
+                                        com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportSuccessItem
+                                                .builder()
+                                                .rowNumber(currentRowNumber)
+                                                .name(name)
+                                                .idCardNumber(idCardNumber)
+                                                .operationType("REHIRE")
+                                                .build());
+                                result.setSuccessCount(result.getSuccessCount() + 1);
+                            } catch (Exception e) {
+                                log.error("重新入职员工失败，行号: {}, 身份证号: {}", currentRowNumber, idCardNumber, e);
+                                result.getFailItems().add(
+                                        com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportFailItem
+                                                .builder()
+                                                .rowNumber(currentRowNumber)
+                                                .name(name)
+                                                .idCardNumber(idCardNumber)
+                                                .reason("重新入职失败: " + e.getMessage())
+                                                .build());
+                                result.setFailCount(result.getFailCount() + 1);
+                            }
+                        } else {
+                            // 员工状态不为离职，不入职该公司，记录错误信息
+                            result.getFailItems().add(
+                                    com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportFailItem
+                                            .builder()
+                                            .rowNumber(currentRowNumber)
+                                            .name(name)
+                                            .idCardNumber(idCardNumber)
+                                            .reason("员工已在职，无法重复添加")
+                                            .build());
+                            result.setFailCount(result.getFailCount() + 1);
+                        }
+                    } else {
+                        // 姓名不同，不入职该公司，记录错误信息
+                        result.getFailItems().add(
+                                com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportFailItem
+                                        .builder()
+                                        .rowNumber(currentRowNumber)
+                                        .name(name)
+                                        .idCardNumber(idCardNumber)
+                                        .reason(String.format("身份证号已存在，但姓名不一致（导入姓名：%s，已存在姓名：%s）", name,
+                                                existingEmployee.getName()))
+                                        .build());
+                        result.setFailCount(result.getFailCount() + 1);
+                    }
+                } else {
+                    // 不存在同身份证号员工，创建新员工
+                    try {
+                        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+                        employeeCreate(companyId, name, null, phone, email, idCardNumber, departmentId, isAdmin);
+
+                        result.getSuccessItems().add(
+                                com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportSuccessItem
+                                        .builder()
+                                        .rowNumber(currentRowNumber)
+                                        .name(name)
+                                        .idCardNumber(idCardNumber)
+                                        .operationType("NEW")
+                                        .build());
+                        result.setSuccessCount(result.getSuccessCount() + 1);
+                    } catch (Exception e) {
+                        log.error("创建员工失败，行号: {}, 身份证号: {}", currentRowNumber, idCardNumber, e);
+                        result.getFailItems().add(
+                                com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult.ImportFailItem
+                                        .builder()
+                                        .rowNumber(currentRowNumber)
+                                        .name(name)
+                                        .idCardNumber(idCardNumber)
+                                        .reason("创建失败: " + e.getMessage())
+                                        .build());
+                        result.setFailCount(result.getFailCount() + 1);
+                    }
+                }
+            }
+
+            result.setTotalRows(totalRows);
+
+        } catch (java.io.IOException e) {
+            log.error("读取Excel文件失败", e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "读取Excel文件失败: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("批量导入员工失败", e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "批量导入员工失败: " + e.getMessage());
+        } finally {
+            // 确保关闭 workbook
+            if (workbook != null) {
+                try {
+                    workbook.close();
+                } catch (java.io.IOException e) {
+                    log.error("关闭Excel文件失败", e);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取单元格值（转换为字符串）
+     */
+    private String getCellValueAsString(org.apache.poi.ss.usermodel.Cell cell) {
+        if (cell == null) {
+            return "";
+        }
+
+        switch (cell.getCellType()) {
+            case STRING:
+                return cell.getStringCellValue();
+            case NUMERIC:
+                if (org.apache.poi.ss.usermodel.DateUtil.isCellDateFormatted(cell)) {
+                    return cell.getDateCellValue().toString();
+                } else {
+                    // 处理数字，避免科学计数法
+                    double numericValue = cell.getNumericCellValue();
+                    if (numericValue == (long) numericValue) {
+                        return String.valueOf((long) numericValue);
+                    } else {
+                        return String.valueOf(numericValue);
+                    }
+                }
+            case BOOLEAN:
+                return String.valueOf(cell.getBooleanCellValue());
+            case FORMULA:
+                return cell.getCellFormula();
+            default:
+                return "";
+        }
     }
 }

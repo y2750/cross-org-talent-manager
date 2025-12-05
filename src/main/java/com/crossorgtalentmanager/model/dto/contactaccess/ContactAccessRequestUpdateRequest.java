@@ -30,3 +30,4 @@ public class ContactAccessRequestUpdateRequest implements Serializable {
      */
     private LocalDateTime expireTime;
 }
+

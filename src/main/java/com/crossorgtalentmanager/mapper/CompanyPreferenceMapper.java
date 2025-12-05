@@ -13,3 +13,4 @@ import org.apache.ibatis.annotations.Mapper;
 public interface CompanyPreferenceMapper extends BaseMapper<CompanyPreference> {
 }
 
+

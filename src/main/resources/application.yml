@@ -1,6 +1,15 @@
 spring:
   application:
     name: cross-org-talent-manager
+  # redis  缓存配置
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      password:
+      ttl: 3600  # 缓存过期时间（秒）
+
   # mysql
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

@@ -482,4 +482,39 @@ public class EmployeeController {
         long count = employeeService.count(qw);
         return ResultUtils.success(count);
     }
+
+    /**
+     * 批量导入员工（从Excel文件）
+     * Excel格式：姓名、身份证号、部门名、手机号、邮箱
+     *
+     * @param file    Excel文件（.xlsx格式）
+     * @param request HTTP请求
+     * @return 导入结果
+     */
+    @PostMapping("/batch/import")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult> batchImportEmployees(
+            @RequestPart("file") MultipartFile file,
+            HttpServletRequest request) {
+        ThrowUtils.throwIf(file == null || file.isEmpty(), ErrorCode.PARAMS_ERROR, "文件不能为空");
+        User loginUser = userService.getLoginUser(request);
+
+        // 权限判断：管理员可以指定公司（可选），非管理员必须使用当前公司
+        boolean isAdmin = UserRoleEnum.ADMIN.getValue().equals(loginUser.getUserRole());
+        Long companyId;
+
+        if (isAdmin) {
+            // 管理员：可以使用请求中的 companyId（可选），也可以不指定（为未加入公司的员工创建账户）
+            // 这里暂时不支持管理员指定公司，统一使用当前登录用户的公司
+            companyId = loginUser.getCompanyId();
+        } else {
+            // 非管理员：必须使用当前登录用户的公司
+            companyId = loginUser.getCompanyId();
+            ThrowUtils.throwIf(companyId == null, ErrorCode.NO_AUTH_ERROR, "无权限");
+        }
+
+        com.crossorgtalentmanager.model.dto.employee.EmployeeBatchImportResult result = employeeService
+                .batchImportEmployees(file, companyId, loginUser);
+        return ResultUtils.success(result);
+    }
 }

@@ -59,3 +59,4 @@ public class ContactAccessRequestQueryRequest implements Serializable {
      */
     private String sortOrder;
 }
+

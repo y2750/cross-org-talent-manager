@@ -248,4 +248,65 @@ public interface TalentMarketService {
      * @return 对比结果
      */
     TalentCompareVO compareTalents(TalentCompareRequest request, User loginUser);
+
+    /**
+     * 获取AI分析任务状态
+     *
+     * @param taskId 任务ID
+     * @return 任务状态（processing=处理中, completed=已完成, failed=失败, not_found=未找到）
+     */
+    String getAiAnalysisTaskStatus(String taskId);
+
+    /**
+     * 获取AI分析任务结果
+     *
+     * @param taskId 任务ID
+     * @return AI分析结果（如果任务未完成返回null）
+     */
+    String getAiAnalysisTaskResult(String taskId);
+
+    /**
+     * 获取AI分析任务错误信息
+     *
+     * @param taskId 任务ID
+     * @return 错误信息（如果任务失败）
+     */
+    String getAiAnalysisTaskError(String taskId);
+
+    /**
+     * 更新对比记录的AI分析结果
+     *
+     * @param taskId       任务ID
+     * @param aiResult     AI分析结果
+     * @param loginUser    当前登录用户
+     */
+    void updateCompareRecordAiResult(String taskId, String aiResult, User loginUser);
+
+    /**
+     * 查询历史对比记录
+     *
+     * @param pageNum   页码
+     * @param pageSize  每页大小
+     * @param loginUser 当前登录用户
+     * @return 历史对比记录列表
+     */
+    Page<TalentCompareRecordVO> getCompareHistory(long pageNum, long pageSize, User loginUser);
+
+    /**
+     * 根据记录ID获取历史对比记录详情
+     *
+     * @param recordId  记录ID
+     * @param loginUser 当前登录用户
+     * @return 历史对比记录详情
+     */
+    TalentCompareRecordVO getCompareHistoryById(Long recordId, User loginUser);
+
+    /**
+     * 检查是否存在相同的对比记录
+     *
+     * @param request   对比请求（包含员工ID列表）
+     * @param loginUser 当前登录用户
+     * @return 如果存在返回记录信息，否则返回null
+     */
+    TalentCompareRecordVO checkExistingCompare(TalentCompareRequest request, User loginUser);
 }

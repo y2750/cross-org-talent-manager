@@ -30,3 +30,4 @@ public class ProfileAccessLogServiceImpl extends ServiceImpl<ProfileAccessLogMap
         this.save(log);
     }
 }
+

@@ -26,6 +26,16 @@ instance.interceptors.request.use(
       delete config.headers['Content-Type']
     }
     
+    // 对于需要AI分析的接口，设置更长的超时时间（120秒，2分钟）
+    // AI分析可能需要较长时间，特别是对比多个人才时
+    if (config.url && (
+      config.url.includes('/talent-market/compare') ||
+      config.url.includes('/talentMarket/compare')
+    )) {
+      config.timeout = 120000 // 120秒 = 2分钟
+      console.log('[Request] 为人才对比接口设置超长超时时间: 120秒')
+    }
+    
     // 从 localStorage 获取用户信息以获取 token
     const userInfo = localStorage.getItem('userInfo')
     if (userInfo) {
@@ -132,7 +142,15 @@ instance.interceptors.response.use(
     } else if (error.response?.status === 500) {
       showError('服务器错误，请稍后重试')
     } else if (error.code === 'ECONNABORTED') {
-      showError('请求超时，请检查网络连接')
+      // 如果是人才对比接口超时，提示AI分析时间较长
+      if (error.config?.url && (
+        error.config.url.includes('/talent-market/compare') ||
+        error.config.url.includes('/talentMarket/compare')
+      )) {
+        showError('AI分析时间较长，请耐心等待或稍后重试')
+      } else {
+        showError('请求超时，请检查网络连接')
+      }
     } else {
       showError(error.message || '网络请求失败')
     }

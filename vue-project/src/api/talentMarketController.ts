@@ -268,3 +268,61 @@ export async function compareTalents(
   })
 }
 
+/** 查询AI分析结果 GET /talent-market/compare/ai-result */
+export async function getAiAnalysisResult(
+  params: { taskId: string },
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponse<{ status: string; result?: string; error?: string }>>(
+    '/talent-market/compare/ai-result',
+    {
+      method: 'GET',
+      params: {
+        ...params,
+      },
+      ...(options || {}),
+    },
+  )
+}
+
+/** 查询历史对比记录 GET /talent-market/compare/history */
+export async function getCompareHistory(
+  params: { pageNum?: number; pageSize?: number },
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponsePageTalentCompareRecordVO>('/talent-market/compare/history', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  })
+}
+
+/** 根据记录ID获取历史对比记录详情 GET /talent-market/compare/history/${recordId} */
+export async function getCompareHistoryById(
+  params: { recordId: string },
+  options?: { [key: string]: any },
+) {
+  const { recordId } = params
+  return request<API.BaseResponseTalentCompareRecordVO>(`/talent-market/compare/history/${recordId}`, {
+    method: 'GET',
+    ...(options || {}),
+  })
+}
+
+/** 检查是否存在相同的对比记录 POST /talent-market/compare/check-existing */
+export async function checkExistingCompare(
+  body: API.TalentCompareRequest,
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseTalentCompareRecordVO>('/talent-market/compare/check-existing', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+

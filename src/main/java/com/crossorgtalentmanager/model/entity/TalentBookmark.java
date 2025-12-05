@@ -55,3 +55,4 @@ public class TalentBookmark implements Serializable {
     private Boolean isDelete;
 }
 
+

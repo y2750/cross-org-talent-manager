@@ -35,6 +35,17 @@ public class TalentCompareVO implements Serializable {
     private List<String> dimensionNames;
 
     /**
+     * AI分析任务ID（如果AI分析异步进行，前端可通过此ID轮询获取结果）
+     */
+    private String aiAnalysisTaskId;
+
+    /**
+     * AI分析结果（JSON格式字符串）
+     * 如果AI分析已完成，此字段包含结果；如果AI分析异步进行中，此字段为null
+     */
+    private String aiAnalysisResult;
+
+    /**
      * 对比项目VO
      */
     @Data
@@ -138,4 +149,3 @@ public class TalentCompareVO implements Serializable {
         private List<String> disadvantages;
     }
 }
-

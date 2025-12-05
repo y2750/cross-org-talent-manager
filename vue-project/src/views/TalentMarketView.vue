@@ -12,8 +12,10 @@ import {
   BarChartOutlined,
   SwapOutlined,
   ReloadOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons-vue'
 import * as talentMarketController from '@/api/talentMarketController'
+import * as companyController from '@/api/companyController'
 import { useUserStore } from '@/stores/userStore'
 
 const router = useRouter()
@@ -152,6 +154,16 @@ const viewHistoryParams = reactive({
 const viewStatistics = ref<any>(null)
 const statisticsLoading = ref(false)
 
+// 历史对比记录
+const compareHistoryModalVisible = ref(false)
+const compareHistoryList = ref<any[]>([])
+const compareHistoryLoading = ref(false)
+const compareHistoryTotal = ref(0)
+const compareHistoryParams = reactive({
+  pageNum: 1,
+  pageSize: 10,
+})
+
 // 企业偏好
 const preference = ref<any>(null)
 const preferenceModalVisible = ref(false)
@@ -162,6 +174,7 @@ const preferenceForm = reactive({
   minScore: undefined as number | undefined,
   excludeMajorIncident: true,
   minAttendanceRate: undefined as number | undefined,
+  requirementDescription: '' as string,
 })
 
 // 获取标签列表
@@ -399,16 +412,60 @@ const toggleCompareSelect = (talent: any) => {
   }
 }
 
-// 开始对比
-const startCompare = () => {
+// 开始深度智能分析
+const startCompare = async () => {
   if (selectedTalents.value.length < 2) {
-    message.warning('请至少选择2个人才进行对比')
+    message.warning('请至少选择2个人才进行深度智能分析')
     return
   }
-  router.push({
-    path: '/talent-market/compare',
-    query: { ids: selectedTalents.value.join(',') },
-  })
+  
+  // 计算积分消耗：10x，x为对比人数（测试阶段设为0）
+  const compareCount = selectedTalents.value.length
+  const cost = 0 // 测试阶段设为0，正式环境改为：10 * compareCount
+  
+  // 测试阶段跳过积分检查和提示，直接跳转
+  if (cost === 0) {
+    router.push({
+      path: '/talent-market/compare',
+      query: { 
+        ids: selectedTalents.value.join(','),
+        forceRefresh: 'true', // 标记为强制刷新，跳过历史记录检查，直接重新分析
+      },
+    })
+    return
+  }
+  
+  // 正式环境：获取当前积分并检查
+  try {
+    const pointsRes = await companyController.getCompanyPoints({})
+    const currentPoints = pointsRes?.data?.data ? Number(pointsRes.data.data) : 0
+    
+    // 检查积分是否足够
+    if (currentPoints < cost) {
+      message.error(`积分不足，深度智能分析需要${cost}积分（10×${compareCount}），当前${currentPoints}积分`)
+      return
+    }
+    
+    // 显示积分消耗确认对话框
+    Modal.confirm({
+      title: '深度智能分析',
+      content: `本次深度智能分析将消耗 ${cost} 积分（10×${compareCount}人）。\n当前积分：${currentPoints}\n扣除后剩余：${currentPoints - cost}\n\n如果分析失败，积分将自动返还。`,
+      okText: '确认分析',
+      cancelText: '取消',
+      onOk: () => {
+        router.push({
+          path: '/talent-market/compare',
+          query: { 
+            ids: selectedTalents.value.join(','),
+            forceRefresh: 'true', // 标记为强制刷新，跳过历史记录检查，直接重新分析
+          },
+        })
+      }
+    })
+  } catch (error: any) {
+    console.error('获取积分失败:', error)
+    message.error(error?.response?.data?.message || '获取积分信息失败，请稍后重试')
+  }
 }
 
 // 获取收藏列表
@@ -483,6 +540,56 @@ const fetchViewStatistics = async () => {
   }
 }
 
+// 获取历史对比记录
+const fetchCompareHistory = async () => {
+  try {
+    compareHistoryLoading.value = true
+    const res = await talentMarketController.getCompareHistory({
+      pageNum: compareHistoryParams.pageNum,
+      pageSize: compareHistoryParams.pageSize,
+    })
+    if (res?.data?.code === 0 && res.data.data) {
+      compareHistoryList.value = res.data.data.records || []
+      compareHistoryTotal.value = res.data.data.totalRow || 0
+    }
+  } catch (error) {
+    console.error('获取历史对比记录失败:', error)
+    message.error('获取历史对比记录失败')
+  } finally {
+    compareHistoryLoading.value = false
+  }
+}
+
+// 打开历史对比记录模态框
+const openCompareHistoryModal = () => {
+  compareHistoryModalVisible.value = true
+  compareHistoryParams.pageNum = 1
+  fetchCompareHistory()
+}
+
+// 查看历史对比记录
+const viewHistoryCompare = (record: any) => {
+  if (record.employeeIds && record.employeeIds.length >= 2) {
+    router.push({
+      path: '/talent-market/compare',
+      query: { 
+        ids: record.employeeIds.join(','),
+        fromHistory: 'true', // 标记来自历史记录
+        recordId: record.id, // 传递记录ID，用于从数据库加载
+      },
+    })
+    compareHistoryModalVisible.value = false
+  } else {
+    message.warning('该历史记录数据不完整')
+  }
+}
+
+// 格式化历史记录时间
+const formatHistoryTime = (time: string) => {
+  if (!time) return '-'
+  return new Date(time).toLocaleString('zh-CN')
+}
+
 // 清除浏览记录
 const clearHistory = () => {
   Modal.confirm({
@@ -514,10 +621,34 @@ const fetchPreference = async () => {
       preferenceForm.minScore = res.data.data.minScore
       preferenceForm.excludeMajorIncident = res.data.data.excludeMajorIncident ?? true
       preferenceForm.minAttendanceRate = res.data.data.minAttendanceRate
+      preferenceForm.requirementDescription = (res.data.data as any).requirementDescription || ''
+    } else {
+      // 如果没有偏好数据，重置表单为默认值
+      preferenceForm.preferredOccupations = []
+      preferenceForm.preferredTagIds = []
+      preferenceForm.excludedTagIds = []
+      preferenceForm.minScore = undefined
+      preferenceForm.excludeMajorIncident = true
+      preferenceForm.minAttendanceRate = undefined
+      preferenceForm.requirementDescription = ''
     }
   } catch (error) {
     console.error('获取偏好失败:', error)
+    // 获取失败时，重置表单为默认值
+    preferenceForm.preferredOccupations = []
+    preferenceForm.preferredTagIds = []
+    preferenceForm.excludedTagIds = []
+    preferenceForm.minScore = undefined
+    preferenceForm.excludeMajorIncident = true
+    preferenceForm.minAttendanceRate = undefined
   }
+}
+
+// 打开招聘偏好设置模态框
+const openPreferenceModal = async () => {
+  preferenceModalVisible.value = true
+  // 打开模态框时，先获取最新的偏好数据并回显
+  await fetchPreference()
 }
 
 // 保存企业偏好
@@ -530,6 +661,7 @@ const savePreference = async () => {
       minScore: preferenceForm.minScore,
       excludeMajorIncident: preferenceForm.excludeMajorIncident,
       minAttendanceRate: preferenceForm.minAttendanceRate,
+      requirementDescription: preferenceForm.requirementDescription,
     })
     message.success('偏好设置已保存')
     preferenceModalVisible.value = false
@@ -600,14 +732,17 @@ onActivated(() => {
       <template #extra>
         <a-space>
           <a-button
-            v-if="selectedTalents.length >= 2"
             type="primary"
             @click="startCompare"
           >
             <SwapOutlined />
-            对比已选 ({{ selectedTalents.length }})
+            深度智能分析{{ selectedTalents.length > 0 ? ` (${selectedTalents.length})` : '' }}
           </a-button>
-          <a-button @click="preferenceModalVisible = true">
+          <a-button @click="openCompareHistoryModal">
+            <HistoryOutlined />
+            历史对比记录
+          </a-button>
+          <a-button @click="openPreferenceModal">
             <SettingOutlined />
             招聘偏好
           </a-button>
@@ -743,9 +878,10 @@ onActivated(() => {
               </a-col>
               <a-col :span="8">
                 <a-form-item label="在职状态">
-                  <a-radio-group v-model:value="searchParams.onlyWorking">
-                    <a-radio :value="false">全部</a-radio>
-                    <a-radio :value="true">仅在职</a-radio>
+                  <a-radio-group v-model:value="searchParams.status">
+                    <a-radio :value="undefined">全部</a-radio>
+                    <a-radio value="working">仅在职</a-radio>
+                    <a-radio value="left">仅离职</a-radio>
                   </a-radio-group>
                 </a-form-item>
               </a-col>
@@ -956,7 +1092,7 @@ onActivated(() => {
           class="preference-tip"
         >
           <template #action>
-            <a-button type="link" @click="preferenceModalVisible = true">立即设置</a-button>
+            <a-button type="link" @click="openPreferenceModal">立即设置</a-button>
           </template>
         </a-alert>
 
@@ -1106,9 +1242,75 @@ onActivated(() => {
       </a-tab-pane>
     </a-tabs>
 
+    <!-- 历史对比记录弹窗 -->
+    <a-modal
+      v-model:open="compareHistoryModalVisible"
+      title="历史对比记录"
+      width="800px"
+      :footer="null"
+    >
+      <a-spin :spinning="compareHistoryLoading">
+        <a-list
+          :data-source="compareHistoryList"
+          :pagination="{
+            current: compareHistoryParams.pageNum,
+            pageSize: compareHistoryParams.pageSize,
+            total: compareHistoryTotal,
+            showSizeChanger: true,
+            showQuickJumper: true,
+            showTotal: (total: number) => `共 ${total} 条记录`,
+            onChange: (page: number, pageSize: number) => {
+              compareHistoryParams.pageNum = page
+              compareHistoryParams.pageSize = pageSize
+              fetchCompareHistory()
+            },
+          }"
+        >
+          <template #renderItem="{ item }">
+            <a-list-item>
+              <a-list-item-meta>
+                <template #title>
+                  <a-space>
+                    <span>对比时间：{{ formatHistoryTime(item.createTime) }}</span>
+                  </a-space>
+                </template>
+                <template #description>
+                  <div style="margin-top: 8px">
+                    <div>
+                      <strong>对比人才：</strong>
+                      <a-tag
+                        v-for="(name, index) in item.employeeNames"
+                        :key="index"
+                        color="blue"
+                        style="margin-right: 8px"
+                      >
+                        {{ name }}
+                      </a-tag>
+                    </div>
+                    <div style="margin-top: 8px; color: #999; font-size: 12px">
+                      更新时间：{{ formatHistoryTime(item.updateTime) }}
+                    </div>
+                  </div>
+                </template>
+              </a-list-item-meta>
+              <template #actions>
+                <a-button type="link" @click="viewHistoryCompare(item)">
+                  查看详情
+                </a-button>
+              </template>
+            </a-list-item>
+          </template>
+        </a-list>
+        <a-empty
+          v-if="!compareHistoryLoading && compareHistoryList.length === 0"
+          description="暂无历史对比记录"
+        />
+      </a-spin>
+    </a-modal>
+
     <!-- 招聘偏好设置弹窗 -->
     <a-modal
-      v-model:visible="preferenceModalVisible"
+      v-model:open="preferenceModalVisible"
       title="招聘偏好设置"
       width="600px"
       @ok="savePreference"
@@ -1171,6 +1373,15 @@ onActivated(() => {
             排除有重大违纪记录的人才
           </a-checkbox>
         </a-form-item>
+        <a-form-item label="具体要求描述">
+          <a-textarea
+            v-model:value="preferenceForm.requirementDescription"
+            placeholder="请输入具体的招聘要求描述，这些信息将影响深度分析结果"
+            :rows="4"
+            :maxlength="1000"
+            show-count
+          />
+        </a-form-item>
       </a-form>
     </a-modal>
   </div>
@@ -1222,7 +1433,7 @@ onActivated(() => {
   flex-direction: column;
   align-items: center;
   padding: 24px 16px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #bae7ff;
   cursor: pointer;
 }
 

@@ -8,7 +8,9 @@ import com.crossorgtalentmanager.mapper.EvaluationTagMapper;
 import com.crossorgtalentmanager.service.EvaluationTagService;
 import com.crossorgtalentmanager.model.vo.EvaluationTagVO;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.Resource;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,16 +26,40 @@ import java.util.stream.Collectors;
 public class EvaluationTagServiceImpl extends ServiceImpl<EvaluationTagMapper, EvaluationTag>
         implements EvaluationTagService {
 
+    @Resource
+    private CacheManager cacheManager;
+
     @Override
+    @org.springframework.cache.annotation.Cacheable(value = "evaluationTags", key = "'active'")
     public List<EvaluationTagVO> listActiveTags() {
-        QueryWrapper queryWrapper = QueryWrapper.create()
-                .eq("is_active", true)
-                .eq("is_delete", false)
-                .orderBy("type", true)
-                .orderBy("sort_order", true);
-        
-        List<EvaluationTag> tags = this.list(queryWrapper);
-        return getEvaluationTagVOList(tags);
+        try {
+            QueryWrapper queryWrapper = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .eq("is_delete", false)
+                    .orderBy("type", true)
+                    .orderBy("sort_order", true);
+            
+            List<EvaluationTag> tags = this.list(queryWrapper);
+            return getEvaluationTagVOList(tags);
+        } catch (ClassCastException e) {
+            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
+            log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                if (cache != null) {
+                    cache.evict("active");
+                }
+            }
+            // 重新查询（不使用缓存）
+            QueryWrapper queryWrapper = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .eq("is_delete", false)
+                    .orderBy("type", true)
+                    .orderBy("sort_order", true);
+            
+            List<EvaluationTag> tags = this.list(queryWrapper);
+            return getEvaluationTagVOList(tags);
+        }
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.crossorgtalentmanager.ai;
 
 import dev.langchain4j.service.SystemMessage;
+import dev.langchain4j.service.UserMessage;
 
 /**
  * ClassName: AiTalentComparisonservice
@@ -13,12 +14,12 @@ import dev.langchain4j.service.SystemMessage;
  */
 public interface AiTalentComparisonService {
     /**
-     * 比较两个候选人的简历与评价和标签详情，并给出推荐意见
+     * 对比多个候选人的简历、评价和标签详情，并给出推荐意见
      *
-     * @param resume1 第一个候选人的简历与评价和标签详情文本
-     * @param resume2 第二个候选人的简历与评价和标签详情文本
-     * @return 推荐意见字符串
+     * @param inputData 完整的输入数据（包含公司偏好和候选人信息）
+     * @return AI分析结果（JSON格式字符串）
      */
     @SystemMessage(fromResource = "prompt/talent-comparison-system-prompt.txt")
-    String compare(String resume1, String resume2);
+    String compareTalents(@UserMessage String inputData);
 }
+

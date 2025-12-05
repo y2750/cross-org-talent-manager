@@ -392,6 +392,44 @@ declare namespace API {
     rewardPunishments?: RewardPunishmentVO[] // 该公司的奖惩记录列表（仅用于员工查看自己的档案时）
   }
 
+  type EmployeeBatchImportResult = {
+    totalRows?: number
+    successCount?: number
+    failCount?: number
+    warningCount?: number
+    successItems?: ImportSuccessItem[]
+    failItems?: ImportFailItem[]
+    warningItems?: ImportWarningItem[]
+  }
+
+  type ImportSuccessItem = {
+    rowNumber?: number
+    name?: string
+    idCardNumber?: string
+    operationType?: string
+  }
+
+  type ImportFailItem = {
+    rowNumber?: number
+    name?: string
+    idCardNumber?: string
+    reason?: string
+  }
+
+  type ImportWarningItem = {
+    rowNumber?: number
+    name?: string
+    idCardNumber?: string
+    existingName?: string
+    message?: string
+  }
+
+  type BaseResponseEmployeeBatchImportResult = {
+    code?: number
+    data?: EmployeeBatchImportResult
+    message?: string
+  }
+
   type EmployeeQueryRequest = {
     pageNum?: number
     pageSize?: number
@@ -1318,6 +1356,7 @@ declare namespace API {
     minScore?: number
     excludeMajorIncident?: boolean
     minAttendanceRate?: number
+    requirementDescription?: string
   }
 
   type CompanyPreferenceVO = {
@@ -1329,6 +1368,7 @@ declare namespace API {
     minScore?: number
     excludeMajorIncident?: boolean
     minAttendanceRate?: number
+    requirementDescription?: string
   }
 
   type BaseResponseCompanyPreferenceVO = {

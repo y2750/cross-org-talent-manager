@@ -108,3 +108,4 @@ public class TalentVO implements Serializable {
     }
 }
 
+

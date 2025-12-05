@@ -249,7 +249,14 @@ const requestProfileAccess = async (profile: any) => {
 
 // 返回
 const goBack = () => {
-  router.push('/talent-market')
+  // 检查是否有保存的返回URL（从对比页面跳转过来的）
+  const returnUrl = sessionStorage.getItem('talent_compare_return_url')
+  if (returnUrl) {
+    sessionStorage.removeItem('talent_compare_return_url')
+    router.push(returnUrl)
+  } else {
+    router.push('/talent-market')
+  }
 }
 
 // 获取评价类型名称

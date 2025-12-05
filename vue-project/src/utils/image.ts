@@ -14,3 +14,4 @@ export const getBase64 = (file: File): Promise<string> => {
   })
 }
 
+

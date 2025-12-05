@@ -9,6 +9,8 @@ import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.crossorgtalentmanager.model.dto.talentmarket.*;
 import com.crossorgtalentmanager.model.entity.User;
 import com.crossorgtalentmanager.model.vo.*;
+import com.crossorgtalentmanager.ratelimiter.annotation.RateLimit;
+import com.crossorgtalentmanager.ratelimiter.enums.RateLimitType;
 import com.crossorgtalentmanager.service.TalentMarketService;
 import com.crossorgtalentmanager.service.UserService;
 import com.mybatisflex.core.paginate.Page;
@@ -17,7 +19,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 人才市场 控制层
@@ -381,11 +385,97 @@ public class TalentMarketController {
      */
     @PostMapping("/compare")
     @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    @RateLimit(limitType = RateLimitType.USER, rate = 2, rateInterval = 60, message = "提交分析任务过于频繁，请稍后再试")
     public BaseResponse<TalentCompareVO> compareTalents(@RequestBody TalentCompareRequest request,
             HttpServletRequest httpRequest) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         User loginUser = userService.getLoginUser(httpRequest);
         TalentCompareVO compareResult = talentMarketService.compareTalents(request, loginUser);
         return ResultUtils.success(compareResult);
+    }
+
+    /**
+     * 查询AI分析结果
+     *
+     * @param taskId      任务ID
+     * @param httpRequest HTTP请求
+     * @return AI分析结果
+     */
+    @GetMapping("/compare/ai-result")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    @RateLimit(limitType = RateLimitType.USER, rate = 120, rateInterval = 60, message = "请求过于频繁，请稍后再试")
+    public BaseResponse<Map<String, Object>> getAiAnalysisResult(@RequestParam String taskId,
+            HttpServletRequest httpRequest) {
+        ThrowUtils.throwIf(taskId == null || taskId.trim().isEmpty(), ErrorCode.PARAMS_ERROR, "任务ID不能为空");
+        User loginUser = userService.getLoginUser(httpRequest);
+
+        Map<String, Object> result = new HashMap<>();
+        String status = talentMarketService.getAiAnalysisTaskStatus(taskId);
+        String aiResult = talentMarketService.getAiAnalysisTaskResult(taskId);
+        String error = talentMarketService.getAiAnalysisTaskError(taskId);
+
+        result.put("status", status);
+        result.put("result", aiResult);
+        result.put("error", error);
+
+        // 如果AI分析完成，更新对比记录中的AI分析结果
+        if ("completed".equals(status) && aiResult != null && !aiResult.trim().isEmpty()) {
+            talentMarketService.updateCompareRecordAiResult(taskId, aiResult, loginUser);
+        }
+
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 查询历史对比记录
+     *
+     * @param pageNum     页码
+     * @param pageSize    每页大小
+     * @param httpRequest HTTP请求
+     * @return 历史对比记录列表
+     */
+    @GetMapping("/compare/history")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<Page<TalentCompareRecordVO>> getCompareHistory(
+            @RequestParam(defaultValue = "1") long pageNum,
+            @RequestParam(defaultValue = "10") long pageSize,
+            HttpServletRequest httpRequest) {
+        User loginUser = userService.getLoginUser(httpRequest);
+        Page<TalentCompareRecordVO> page = talentMarketService.getCompareHistory(pageNum, pageSize, loginUser);
+        return ResultUtils.success(page);
+    }
+
+    /**
+     * 根据记录ID获取历史对比记录详情
+     *
+     * @param recordId    记录ID
+     * @param httpRequest HTTP请求
+     * @return 历史对比记录详情
+     */
+    @GetMapping("/compare/history/{recordId}")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<TalentCompareRecordVO> getCompareHistoryById(
+            @PathVariable Long recordId,
+            HttpServletRequest httpRequest) {
+        User loginUser = userService.getLoginUser(httpRequest);
+        TalentCompareRecordVO record = talentMarketService.getCompareHistoryById(recordId, loginUser);
+        return ResultUtils.success(record);
+    }
+
+    /**
+     * 检查是否存在相同的对比记录
+     *
+     * @param request     对比请求（包含员工ID列表）
+     * @param httpRequest HTTP请求
+     * @return 如果存在返回记录信息，否则返回null
+     */
+    @PostMapping("/compare/check-existing")
+    @AuthCheck(mustRole = UserConstant.HR_ROLE)
+    public BaseResponse<TalentCompareRecordVO> checkExistingCompare(@RequestBody TalentCompareRequest request,
+            HttpServletRequest httpRequest) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        User loginUser = userService.getLoginUser(httpRequest);
+        TalentCompareRecordVO record = talentMarketService.checkExistingCompare(request, loginUser);
+        return ResultUtils.success(record);
     }
 }

@@ -59,3 +59,4 @@ public class ProfileAccessRequestQueryRequest implements Serializable {
      */
     private String sortOrder;
 }
+

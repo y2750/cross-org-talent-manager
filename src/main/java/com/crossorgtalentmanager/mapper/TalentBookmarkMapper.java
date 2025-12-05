@@ -13,3 +13,4 @@ import org.apache.ibatis.annotations.Mapper;
 public interface TalentBookmarkMapper extends BaseMapper<TalentBookmark> {
 }
 
+

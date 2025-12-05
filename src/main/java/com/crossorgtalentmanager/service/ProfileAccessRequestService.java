@@ -46,3 +46,4 @@ public interface ProfileAccessRequestService extends IService<ProfileAccessReque
      */
     Boolean canAccessProfile(Long profileId, Long requestCompanyId, Long employeeId);
 }
+

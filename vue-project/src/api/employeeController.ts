@@ -191,3 +191,15 @@ export async function getDepartmentColleagues(options?: { [key: string]: any }) 
     ...(options || {}),
   })
 }
+
+/** 批量导入员工 POST /employee/batch/import */
+export async function batchImportEmployees(
+  body: FormData,
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseEmployeeBatchImportResult>('/employee/batch/import', {
+    method: 'POST',
+    data: body,
+    ...(options || {}),
+  })
+}

@@ -15,10 +15,13 @@ import com.crossorgtalentmanager.model.enums.PointsChangeReasonEnum;
 import com.crossorgtalentmanager.model.enums.UserRoleEnum;
 import com.crossorgtalentmanager.model.vo.*;
 import com.crossorgtalentmanager.service.*;
+import com.crossorgtalentmanager.ai.AiTalentComparisonService;
+import com.crossorgtalentmanager.model.entity.TalentCompareRecord;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -80,6 +83,9 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     private CompanyPreferenceMapper preferenceMapper;
 
     @Resource
+    private CacheManager cacheManager;
+
+    @Resource
     private UserService userService;
 
     @Resource
@@ -87,6 +93,39 @@ public class TalentMarketServiceImpl implements TalentMarketService {
 
     @Resource
     private ContactAccessRequestService contactAccessRequestService;
+
+    @Resource
+    private AiTalentComparisonService aiTalentComparisonService;
+
+    @Resource
+    private com.crossorgtalentmanager.service.AiAnalysisTaskService aiAnalysisTaskService;
+
+    @Resource
+    private TalentCompareRecordService talentCompareRecordService;
+
+    @Override
+    public String getAiAnalysisTaskStatus(String taskId) {
+        if (aiAnalysisTaskService == null) {
+            return "not_found";
+        }
+        return aiAnalysisTaskService.getTaskStatus(taskId);
+    }
+
+    @Override
+    public String getAiAnalysisTaskResult(String taskId) {
+        if (aiAnalysisTaskService == null) {
+            return null;
+        }
+        return aiAnalysisTaskService.getTaskResult(taskId);
+    }
+
+    @Override
+    public String getAiAnalysisTaskError(String taskId) {
+        if (aiAnalysisTaskService == null) {
+            return null;
+        }
+        return aiAnalysisTaskService.getTaskError(taskId);
+    }
 
     // 高级搜索功能积分消耗配置
     private static final BigDecimal ADVANCED_SEARCH_TAG_INCLUDE_COST = new BigDecimal("0.5"); // 包含标签筛选
@@ -610,22 +649,50 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
+    @org.springframework.cache.annotation.Cacheable(value = "unlockPriceConfigs", key = "'all'")
     public List<UnlockPriceConfigVO> getUnlockPriceConfigs() {
-        QueryWrapper query = QueryWrapper.create()
-                .eq("is_active", true)
-                .orderBy("evaluation_type", true);
-        List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
+        try {
+            QueryWrapper query = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .orderBy("evaluation_type", true);
+            List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
 
-        return configs.stream().map(config -> {
-            UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
-            vo.setEvaluationType(config.getEvaluationType());
-            vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
-                    ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
-                    : "未知");
-            vo.setPointsCost(config.getPointsCost());
-            vo.setDescription(config.getDescription());
-            return vo;
-        }).collect(Collectors.toList());
+            return configs.stream().map(config -> {
+                UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
+                vo.setEvaluationType(config.getEvaluationType());
+                vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
+                        ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
+                        : "未知");
+                vo.setPointsCost(config.getPointsCost());
+                vo.setDescription(config.getDescription());
+                return vo;
+            }).collect(Collectors.toList());
+        } catch (ClassCastException e) {
+            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
+            log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("unlockPriceConfigs");
+                if (cache != null) {
+                    cache.evict("all");
+                }
+            }
+            // 重新查询（不使用缓存）
+            QueryWrapper query = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .orderBy("evaluation_type", true);
+            List<UnlockPriceConfig> configs = priceConfigMapper.selectListByQuery(query);
+
+            return configs.stream().map(config -> {
+                UnlockPriceConfigVO vo = new UnlockPriceConfigVO();
+                vo.setEvaluationType(config.getEvaluationType());
+                vo.setEvaluationTypeName(EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()) != null
+                        ? EvaluationTypeEnum.getEnumByValue(config.getEvaluationType()).getText()
+                        : "未知");
+                vo.setPointsCost(config.getPointsCost());
+                vo.setDescription(config.getDescription());
+                return vo;
+            }).collect(Collectors.toList());
+        }
     }
 
     @Override
@@ -641,23 +708,52 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
+    @org.springframework.cache.annotation.Cacheable(value = "evaluationTags", key = "'all'")
     public List<EvaluationTagVO> getAllTags() {
-        QueryWrapper query = QueryWrapper.create()
-                .eq("is_active", true)
-                .orderBy("type", true)
-                .orderBy("sort_order", true);
-        List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
+        try {
+            QueryWrapper query = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .orderBy("type", true)
+                    .orderBy("sort_order", true);
+            List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
 
-        return tags.stream().map(tag -> {
-            EvaluationTagVO vo = new EvaluationTagVO();
-            vo.setId(tag.getId());
-            vo.setName(tag.getName());
-            vo.setType(tag.getType());
-            vo.setDescription(tag.getDescription());
-            vo.setSortOrder(tag.getSortOrder());
-            vo.setIsActive(tag.getIsActive());
-            return vo;
-        }).collect(Collectors.toList());
+            return tags.stream().map(tag -> {
+                EvaluationTagVO vo = new EvaluationTagVO();
+                vo.setId(tag.getId());
+                vo.setName(tag.getName());
+                vo.setType(tag.getType());
+                vo.setDescription(tag.getDescription());
+                vo.setSortOrder(tag.getSortOrder());
+                vo.setIsActive(tag.getIsActive());
+                return vo;
+            }).collect(Collectors.toList());
+        } catch (ClassCastException e) {
+            // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
+            log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
+            if (cacheManager != null) {
+                org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                if (cache != null) {
+                    cache.evict("all");
+                }
+            }
+            // 重新查询（不使用缓存）
+            QueryWrapper query = QueryWrapper.create()
+                    .eq("is_active", true)
+                    .orderBy("type", true)
+                    .orderBy("sort_order", true);
+            List<EvaluationTag> tags = tagMapper.selectListByQuery(query);
+
+            return tags.stream().map(tag -> {
+                EvaluationTagVO vo = new EvaluationTagVO();
+                vo.setId(tag.getId());
+                vo.setName(tag.getName());
+                vo.setType(tag.getType());
+                vo.setDescription(tag.getDescription());
+                vo.setSortOrder(tag.getSortOrder());
+                vo.setIsActive(tag.getIsActive());
+                return vo;
+            }).collect(Collectors.toList());
+        }
     }
 
     @Override
@@ -1559,6 +1655,7 @@ public class TalentMarketServiceImpl implements TalentMarketService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @org.springframework.cache.annotation.CacheEvict(value = "companyPreference", key = "#loginUser.companyId")
     public Long savePreference(CompanyPreferenceRequest request, User loginUser) {
         ThrowUtils.throwIf(!hasAccessPermission(loginUser), ErrorCode.NO_AUTH_ERROR, "无权访问人才市场");
 
@@ -1590,6 +1687,7 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         preference.setMinScore(request.getMinScore());
         preference.setExcludeMajorIncident(request.getExcludeMajorIncident());
         preference.setMinAttendanceRate(request.getMinAttendanceRate());
+        preference.setRequirementDescription(request.getRequirementDescription());
         preference.setIsDelete(false);
 
         if (existing != null) {
@@ -1602,6 +1700,7 @@ public class TalentMarketServiceImpl implements TalentMarketService {
     }
 
     @Override
+    @org.springframework.cache.annotation.Cacheable(value = "companyPreference", key = "#loginUser.companyId", condition = "#loginUser.companyId != null")
     public CompanyPreferenceVO getPreference(User loginUser) {
         ThrowUtils.throwIf(!hasAccessPermission(loginUser), ErrorCode.NO_AUTH_ERROR, "无权访问人才市场");
 
@@ -1748,6 +1847,161 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         compareVO.setItems(items);
         compareVO.setDimensionRadarData(dimensionRadarData);
 
+        // 深度智能分析需要扣除积分：10x，x为对比人数（测试阶段设为0）
+        BigDecimal compareCost = BigDecimal.valueOf(0); // 测试阶段设为0，正式环境改为：10 * employeeIds.size()
+        Long pointsRecordId = null; // 保存积分扣除记录ID，以便失败时返还
+
+        // 检查积分是否足够（测试阶段跳过检查）
+        if (compareCost.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal currentPoints = companyPointsService.getTotalPoints(companyId);
+            ThrowUtils.throwIf(currentPoints.compareTo(compareCost) < 0,
+                    ErrorCode.OPERATION_ERROR,
+                    "积分不足，深度智能分析需要" + compareCost + "积分（10×" + employeeIds.size() + "），当前" + currentPoints + "积分");
+
+            // 扣除积分
+            try {
+                pointsRecordId = companyPointsService.addPoints(
+                        companyId,
+                        compareCost.negate(),
+                        PointsChangeReasonEnum.RIGHTS_CONSUMPTION.getValue(),
+                        null,
+                        "深度智能分析（" + employeeIds.size() + "人对比）");
+                log.info("深度智能分析积分扣除成功，公司ID={}, 扣除积分={}, 记录ID={}", companyId, compareCost, pointsRecordId);
+            } catch (Exception e) {
+                log.error("扣除深度智能分析积分失败，公司ID={}, 错误：{}", companyId, e.getMessage(), e);
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, "扣除积分失败：" + e.getMessage());
+            }
+        } else {
+            log.info("深度智能分析测试模式，不扣除积分，公司ID={}, 对比人数={}", companyId, employeeIds.size());
+        }
+
+        // 先返回基础数据，AI分析异步执行
+        // 如果AI服务可用，准备异步分析
+        if (aiTalentComparisonService != null) {
+            try {
+                log.info("准备启动AI分析任务，公司ID={}, 员工数量={}", companyId, employeeIds.size());
+
+                // 收集公司偏好信息
+                String companyPreferenceInfo = formatCompanyPreferenceInfo(companyId);
+                log.info("公司偏好信息格式化完成，长度={}字符", companyPreferenceInfo.length());
+
+                // 收集所有人才的信息
+                StringBuilder talentInfosBuilder = new StringBuilder();
+                for (int i = 0; i < items.size(); i++) {
+                    TalentCompareVO.CompareItemVO item = items.get(i);
+                    Long employeeId = item.getEmployeeId();
+                    String talentInfo = formatTalentInfoForAI(employeeId, companyId, item);
+                    talentInfosBuilder.append("=".repeat(80)).append("\n");
+                    talentInfosBuilder.append("候选人 ").append(i + 1).append("：").append(item.getName()).append("\n");
+                    talentInfosBuilder.append("=".repeat(80)).append("\n");
+                    talentInfosBuilder.append(talentInfo).append("\n\n");
+                    log.info("格式化候选人{}信息完成，姓名={}, 信息长度={}字符", i + 1, item.getName(), talentInfo.length());
+                }
+                String talentInfos = talentInfosBuilder.toString();
+                log.info("所有候选人信息格式化完成，总长度={}字符", talentInfos.length());
+
+                // 查找历史对比记录作为参考（最多5条）
+                List<TalentCompareRecord> historyRecords = talentCompareRecordService
+                        .findRelatedHistoryRecords(companyId, employeeIds);
+                StringBuilder historyContext = new StringBuilder();
+                if (CollUtil.isNotEmpty(historyRecords)) {
+                    log.info("找到{}条相关历史对比记录，将作为AI分析参考", historyRecords.size());
+                    historyContext.append("\n\n## 历史对比记录参考\n");
+                    historyContext.append("以下是与当前对比候选人相关的历史对比记录，可作为参考，帮助保持推荐指数的稳定性：\n\n");
+                    for (int i = 0; i < historyRecords.size(); i++) {
+                        TalentCompareRecord historyRecord = historyRecords.get(i);
+                        historyContext.append("### 历史记录 ").append(i + 1).append("\n");
+                        if (StrUtil.isNotBlank(historyRecord.getAiAnalysisResult())) {
+                            // 只提取历史记录的AI分析结果作为参考，不包含完整对比数据
+                            historyContext.append(historyRecord.getAiAnalysisResult()).append("\n\n");
+                        }
+                    }
+                    historyContext.append("请参考以上历史记录，在保持推荐指数稳定性的基础上，对当前候选人进行对比分析。\n");
+                } else {
+                    log.info("未找到相关历史对比记录");
+                }
+
+                // 准备AI输入数据
+                String inputData = "公司招聘偏好设置：\n" + companyPreferenceInfo + "\n\n候选人信息：\n" + talentInfos
+                        + historyContext.toString();
+                log.debug("完整AI输入数据长度={}字符", inputData.length());
+
+                // 提交AI分析任务（异步执行）
+                String taskId = aiAnalysisTaskService.submitTask(companyId, employeeIds, inputData);
+                compareVO.setAiAnalysisTaskId(taskId);
+                log.info("AI分析任务已提交，任务ID={}，基础数据将立即返回", taskId);
+
+                // 不等待AI分析完成，立即返回基础数据
+                // AI分析结果将通过任务ID查询接口获取
+            } catch (Exception e) {
+                log.error("提交AI分析任务失败，公司ID={}, 员工数量={}, 错误信息：{}",
+                        companyId, employeeIds.size(), e.getMessage(), e);
+
+                // AI分析任务提交失败，返还积分
+                if (pointsRecordId != null) {
+                    try {
+                        companyPointsService.addPoints(
+                                companyId,
+                                compareCost,
+                                PointsChangeReasonEnum.RIGHTS_CONSUMPTION.getValue(),
+                                null,
+                                "深度智能分析失败，返还积分（" + employeeIds.size() + "人对比）");
+                        log.info("AI分析任务提交失败，已返还积分，公司ID={}, 返还积分={}", companyId, compareCost);
+                    } catch (Exception refundException) {
+                        log.error("返还积分失败，公司ID={}, 错误：{}", companyId, refundException.getMessage(), refundException);
+                    }
+                }
+
+                // AI分析任务提交失败不影响基础对比功能，继续返回基础对比结果
+            }
+        } else {
+            log.warn("AI人才对比服务未配置，跳过AI分析，仅返回基础对比结果");
+
+            // AI服务不可用，返还积分
+            if (pointsRecordId != null) {
+                try {
+                    companyPointsService.addPoints(
+                            companyId,
+                            compareCost,
+                            PointsChangeReasonEnum.RIGHTS_CONSUMPTION.getValue(),
+                            null,
+                            "深度智能分析服务不可用，返还积分（" + employeeIds.size() + "人对比）");
+                    log.info("AI服务不可用，已返还积分，公司ID={}, 返还积分={}", companyId, compareCost);
+                } catch (Exception refundException) {
+                    log.error("返还积分失败，公司ID={}, 错误：{}", companyId, refundException.getMessage(), refundException);
+                }
+            }
+        }
+
+        // 保存对比记录到数据库（每次对比都创建新记录）
+        try {
+            String compareResultJson = JSONUtil.toJsonStr(compareVO);
+
+            // 每次对比都创建新记录，不检查是否已存在
+            // 排序员工ID列表，确保格式一致
+            List<Long> sortedEmployeeIds = new ArrayList<>(employeeIds);
+            Collections.sort(sortedEmployeeIds);
+            String employeeIdsJson = JSONUtil.toJsonStr(sortedEmployeeIds);
+
+            TalentCompareRecord newRecord = TalentCompareRecord.builder()
+                    .companyId(companyId)
+                    .employeeIds(employeeIdsJson)
+                    .compareResult(compareResultJson)
+                    .aiAnalysisResult(null) // AI分析结果稍后通过任务ID更新
+                    .isDelete(false)
+                    .build();
+
+            boolean saved = talentCompareRecordService.save(newRecord);
+            if (saved) {
+                log.info("对比记录已保存到数据库，记录ID={}, 企业ID={}, 员工数量={}", newRecord.getId(), companyId, employeeIds.size());
+            } else {
+                log.error("保存对比记录失败，企业ID={}, 员工数量={}", companyId, employeeIds.size());
+            }
+        } catch (Exception e) {
+            log.error("保存对比记录失败，企业ID={}, 员工数量={}, 错误：{}", companyId, employeeIds.size(), e.getMessage(), e);
+            // 保存失败不影响对比功能，继续返回结果
+        }
+
         return compareVO;
     }
 
@@ -1876,6 +2130,7 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         vo.setMinScore(preference.getMinScore());
         vo.setExcludeMajorIncident(preference.getExcludeMajorIncident());
         vo.setMinAttendanceRate(preference.getMinAttendanceRate());
+        vo.setRequirementDescription(preference.getRequirementDescription());
 
         return vo;
     }
@@ -2460,5 +2715,562 @@ public class TalentMarketServiceImpl implements TalentMarketService {
             item.setAdvantages(advantages.subList(0, Math.min(3, advantages.size())));
             item.setDisadvantages(disadvantages.subList(0, Math.min(3, disadvantages.size())));
         }
+    }
+
+    // ==================== AI人才对比相关方法 ====================
+
+    /**
+     * 格式化公司招聘偏好信息为文本
+     */
+    private String formatCompanyPreferenceInfo(Long companyId) {
+        log.info("开始格式化公司偏好信息，公司ID={}", companyId);
+        CompanyPreference preference = getCompanyPreference(companyId);
+        if (preference == null) {
+            log.info("公司未设置招聘偏好，使用默认提示");
+            return "公司未设置招聘偏好，请根据通用标准进行评估。";
+        }
+        log.info("找到公司偏好设置，开始格式化");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 公司招聘偏好设置\n\n");
+
+        // 偏好职位
+        if (StrUtil.isNotBlank(preference.getPreferredOccupations())) {
+            List<String> occupations = JSONUtil.toList(preference.getPreferredOccupations(), String.class);
+            if (CollUtil.isNotEmpty(occupations)) {
+                sb.append("偏好职位：").append(String.join("、", occupations)).append("\n");
+            }
+        }
+
+        // 偏好标签
+        if (StrUtil.isNotBlank(preference.getPreferredTagIds())) {
+            List<Long> tagIds = JSONUtil.toList(preference.getPreferredTagIds(), Long.class);
+            if (CollUtil.isNotEmpty(tagIds)) {
+                List<String> tagNames = new ArrayList<>();
+                for (Long tagId : tagIds) {
+                    EvaluationTag tag = tagMapper.selectOneById(tagId);
+                    if (tag != null) {
+                        tagNames.add(tag.getName());
+                    }
+                }
+                if (CollUtil.isNotEmpty(tagNames)) {
+                    sb.append("偏好标签：").append(String.join("、", tagNames)).append("\n");
+                }
+            }
+        }
+
+        // 排除标签
+        if (StrUtil.isNotBlank(preference.getExcludedTagIds())) {
+            List<Long> tagIds = JSONUtil.toList(preference.getExcludedTagIds(), Long.class);
+            if (CollUtil.isNotEmpty(tagIds)) {
+                List<String> tagNames = new ArrayList<>();
+                for (Long tagId : tagIds) {
+                    EvaluationTag tag = tagMapper.selectOneById(tagId);
+                    if (tag != null) {
+                        tagNames.add(tag.getName());
+                    }
+                }
+                if (CollUtil.isNotEmpty(tagNames)) {
+                    sb.append("排除标签：").append(String.join("、", tagNames)).append("\n");
+                }
+            }
+        }
+
+        // 最低评分要求
+        if (preference.getMinScore() != null) {
+            sb.append("最低评分要求：").append(preference.getMinScore()).append("分\n");
+        }
+
+        // 是否排除重大违纪
+        if (Boolean.TRUE.equals(preference.getExcludeMajorIncident())) {
+            sb.append("排除有重大违纪记录的人员\n");
+        }
+
+        // 最低出勤率要求
+        if (preference.getMinAttendanceRate() != null) {
+            sb.append("最低出勤率要求：").append(preference.getMinAttendanceRate()).append("%\n");
+        }
+
+        // 具体要求描述
+        if (StrUtil.isNotBlank(preference.getRequirementDescription())) {
+            sb.append("\n具体要求描述：\n").append(preference.getRequirementDescription()).append("\n");
+        }
+
+        sb.append("\n");
+        String result = sb.toString();
+        log.info("公司偏好信息格式化完成，长度={}字符", result.length());
+        return result;
+    }
+
+    /**
+     * 格式化单个人才的信息为文本（供AI分析使用）
+     */
+    private String formatTalentInfoForAI(Long employeeId, Long companyId, TalentCompareVO.CompareItemVO item) {
+        log.info("开始格式化人才信息，员工ID={}, 姓名={}, 查看公司ID={}", employeeId, item.getName(), companyId);
+        StringBuilder sb = new StringBuilder();
+
+        // 基本信息
+        sb.append("## 基本信息\n");
+        sb.append("姓名：").append(item.getName()).append("\n");
+        sb.append("性别：").append(item.getGender() != null ? item.getGender() : "未知").append("\n");
+        sb.append("当前状态：").append(Boolean.TRUE.equals(item.getStatus()) ? "在职" : "离职").append("\n");
+        if (StrUtil.isNotBlank(item.getCurrentCompanyName())) {
+            sb.append("当前公司：").append(item.getCurrentCompanyName()).append("\n");
+        }
+        if (item.getWorkYears() != null) {
+            sb.append("工作年限：").append(item.getWorkYears()).append("年\n");
+        }
+        if (item.getAverageScore() != null) {
+            sb.append("综合评分：").append(item.getAverageScore()).append("分\n");
+        }
+        sb.append("\n");
+
+        // 工作经历
+        sb.append("## 工作经历\n");
+        // 获取员工信息以获取当前公司ID
+        Employee employee = employeeMapper.selectOneById(employeeId);
+        Long targetEmployeeCompanyId = employee != null ? employee.getCompanyId() : null;
+        log.debug("员工{}当前公司ID={}, 查看公司ID={}", employeeId, targetEmployeeCompanyId, companyId);
+
+        List<TalentDetailVO.ProfileSummaryVO> profiles = getProfileSummaries(employeeId, companyId,
+                targetEmployeeCompanyId);
+        log.debug("员工{}共有{}条工作经历", employeeId, profiles != null ? profiles.size() : 0);
+
+        if (CollUtil.isNotEmpty(profiles)) {
+            for (TalentDetailVO.ProfileSummaryVO profile : profiles) {
+                sb.append("### 工作经历 ").append(profiles.indexOf(profile) + 1).append("\n");
+                sb.append("公司：").append(profile.getCompanyName() != null ? profile.getCompanyName() : "未知")
+                        .append("\n");
+
+                // 检查档案的可见性和授权状态
+                Integer visibility = profile.getVisibility() != null ? profile.getVisibility() : 2;
+                boolean canViewDetail = Boolean.TRUE.equals(profile.getCanViewDetail());
+
+                // 如果visibility=0或visibility=1且未授权，只提供入职和离职时间
+                if (visibility == 0 || (visibility == 1 && !canViewDetail)) {
+                    sb.append("入职日期：").append(profile.getStartDate() != null ? profile.getStartDate() : "未知")
+                            .append("\n");
+                    sb.append("离职日期：").append(profile.getEndDate() != null ? profile.getEndDate() : "在职").append("\n");
+                    sb.append("（该档案信息保密，不可查看详细信息）\n");
+                } else {
+                    // 可以查看完整信息
+                    sb.append("职位：").append(profile.getOccupation() != null && !"**".equals(profile.getOccupation())
+                            ? profile.getOccupation()
+                            : "未知").append("\n");
+                    sb.append("入职日期：").append(profile.getStartDate() != null ? profile.getStartDate() : "未知")
+                            .append("\n");
+                    sb.append("离职日期：").append(profile.getEndDate() != null ? profile.getEndDate() : "在职").append("\n");
+
+                    if (profile.getAttendanceRate() != null) {
+                        sb.append("出勤率：").append(profile.getAttendanceRate()).append("%\n");
+                    }
+                    if (profile.getPerformanceSummary() != null && !"**".equals(profile.getPerformanceSummary())) {
+                        sb.append("绩效摘要：").append(profile.getPerformanceSummary()).append("\n");
+                    }
+                    if (Boolean.TRUE.equals(profile.getHasMajorIncident())) {
+                        sb.append("重大违纪：是\n");
+                    }
+                    if (StrUtil.isNotBlank(profile.getReasonForLeaving())
+                            && !"**".equals(profile.getReasonForLeaving())) {
+                        sb.append("离职原因：").append(profile.getReasonForLeaving()).append("\n");
+                    }
+                }
+                sb.append("\n");
+            }
+        } else {
+            sb.append("无工作经历记录\n\n");
+        }
+
+        // 评价信息
+        sb.append("## 评价信息\n");
+        List<Evaluation> allEvaluations = getEmployeeEvaluations(employeeId);
+        log.debug("员工{}共有{}条评价", employeeId, allEvaluations != null ? allEvaluations.size() : 0);
+
+        List<Long> unlockedEvaluationIds = getUnlockedEvaluationIds(companyId, employeeId);
+        log.debug("公司{}已解锁员工{}的{}条评价", companyId, employeeId, unlockedEvaluationIds.size());
+
+        List<Evaluation> visibleEvaluations = new ArrayList<>();
+
+        // 获取可查看的评价（前3条免费 + 已解锁的），但排除自评（evaluation_type=4）
+        if (CollUtil.isNotEmpty(allEvaluations)) {
+            int freeCount = 0;
+            for (Evaluation evaluation : allEvaluations) {
+                // 排除自评（evaluation_type=4）
+                if (evaluation.getEvaluationType() != null && evaluation.getEvaluationType() == 4) {
+                    continue;
+                }
+
+                // 前3条免费可见，或者已解锁的可见
+                if (freeCount < 3 || unlockedEvaluationIds.contains(evaluation.getId())) {
+                    visibleEvaluations.add(evaluation);
+                    if (freeCount < 3) {
+                        freeCount++;
+                    }
+                }
+            }
+            log.debug("员工{}可查看的评价数量：{}条（前3条免费 + {}条已解锁，已排除自评）",
+                    employeeId, visibleEvaluations.size(), unlockedEvaluationIds.size());
+        }
+
+        if (CollUtil.isNotEmpty(visibleEvaluations)) {
+            // 计算排除自评后的总评价数
+            long totalNonSelfEvaluations = allEvaluations.stream()
+                    .filter(e -> e.getEvaluationType() == null || e.getEvaluationType() != 4)
+                    .count();
+
+            sb.append("评价总数：").append(totalNonSelfEvaluations).append("条（已排除自评），可见：").append(visibleEvaluations.size())
+                    .append("条\n\n");
+
+            // 按evaluation_type分组，每个类型最多30条，按日期降序（日期越新的优先级越高）
+            // 注意：自评已经被过滤，不会出现在这里
+            Map<Integer, List<Evaluation>> evaluationsByType = visibleEvaluations.stream()
+                    .collect(Collectors.groupingBy(Evaluation::getEvaluationType));
+
+            // 对每个类型的评价按日期降序排序，并限制最多30条
+            for (Map.Entry<Integer, List<Evaluation>> entry : evaluationsByType.entrySet()) {
+                Integer evaluationType = entry.getKey();
+                List<Evaluation> typeEvaluations = entry.getValue();
+
+                // 按日期降序排序（日期越新的优先级越高）
+                typeEvaluations.sort((a, b) -> {
+                    if (a.getEvaluationDate() == null && b.getEvaluationDate() == null) {
+                        return 0;
+                    }
+                    if (a.getEvaluationDate() == null) {
+                        return 1;
+                    }
+                    if (b.getEvaluationDate() == null) {
+                        return -1;
+                    }
+                    return b.getEvaluationDate().compareTo(a.getEvaluationDate());
+                });
+
+                // 每个类型最多30条
+                List<Evaluation> limitedEvaluations = typeEvaluations.stream()
+                        .limit(30)
+                        .collect(Collectors.toList());
+
+                EvaluationTypeEnum typeEnum = EvaluationTypeEnum.getEnumByValue(evaluationType);
+                sb.append("### ").append(typeEnum != null ? typeEnum.getText() : "评价类型" + evaluationType)
+                        .append("（共").append(typeEvaluations.size()).append("条，显示最新").append(limitedEvaluations.size())
+                        .append("条）\n");
+
+                for (Evaluation evaluation : limitedEvaluations) {
+                    sb.append("#### 评价日期：").append(evaluation.getEvaluationDate()).append("\n");
+                    if (StrUtil.isNotBlank(evaluation.getComment())) {
+                        sb.append("评价内容：").append(evaluation.getComment()).append("\n");
+                    }
+
+                    // 维度评分
+                    QueryWrapper dimQuery = QueryWrapper.create()
+                            .eq("evaluation_id", evaluation.getId());
+                    List<EvaluationDimensionScore> dimScores = dimensionScoreMapper.selectListByQuery(dimQuery);
+                    if (CollUtil.isNotEmpty(dimScores)) {
+                        sb.append("维度评分：");
+                        List<String> dimScoreStrs = new ArrayList<>();
+                        for (EvaluationDimensionScore dimScore : dimScores) {
+                            EvaluationDimension dim = dimensionMapper.selectOneById(dimScore.getDimensionId());
+                            if (dim != null) {
+                                dimScoreStrs.add(dim.getName() + "：" + dimScore.getScore() + "分");
+                            }
+                        }
+                        sb.append(String.join("，", dimScoreStrs)).append("\n");
+                    }
+
+                    // 标签
+                    QueryWrapper tagQuery = QueryWrapper.create()
+                            .eq("evaluation_id", evaluation.getId())
+                            .eq("is_delete", false);
+                    List<EvaluationTagRelation> tagRelations = tagRelationMapper.selectListByQuery(tagQuery);
+                    if (CollUtil.isNotEmpty(tagRelations)) {
+                        List<String> tagNames = new ArrayList<>();
+                        for (EvaluationTagRelation relation : tagRelations) {
+                            EvaluationTag tag = tagMapper.selectOneById(relation.getTagId());
+                            if (tag != null) {
+                                tagNames.add(tag.getName());
+                            }
+                        }
+                        if (CollUtil.isNotEmpty(tagNames)) {
+                            sb.append("标签：").append(String.join("、", tagNames)).append("\n");
+                        }
+                    }
+                    sb.append("\n");
+                }
+            }
+        } else {
+            sb.append("暂无评价信息\n\n");
+        }
+
+        // 标签统计
+        sb.append("## 标签统计\n");
+        Map<String, List<TalentVO.TagStatVO>> tagStats = getTagStatistics(employeeId);
+        List<TalentVO.TagStatVO> positiveTags = tagStats.get("positive");
+        List<TalentVO.TagStatVO> neutralTags = tagStats.get("neutral");
+
+        if (CollUtil.isNotEmpty(positiveTags)) {
+            sb.append("正面标签：");
+            List<String> positiveTagNames = positiveTags.stream()
+                    .map(TalentVO.TagStatVO::getTagName)
+                    .collect(Collectors.toList());
+            sb.append(String.join("、", positiveTagNames)).append("\n");
+        }
+
+        if (CollUtil.isNotEmpty(neutralTags)) {
+            sb.append("中性标签：");
+            List<String> neutralTagNames = neutralTags.stream()
+                    .map(TalentVO.TagStatVO::getTagName)
+                    .collect(Collectors.toList());
+            sb.append(String.join("、", neutralTagNames)).append("\n");
+        }
+
+        // 各维度评分
+        if (item.getDimensionScores() != null && !item.getDimensionScores().isEmpty()) {
+            sb.append("\n## 各维度评分\n");
+            for (Map.Entry<String, BigDecimal> entry : item.getDimensionScores().entrySet()) {
+                sb.append(entry.getKey()).append("：").append(entry.getValue()).append("分\n");
+            }
+        }
+
+        // 其他信息
+        sb.append("\n## 其他信息\n");
+        if (item.getEvaluationCount() != null) {
+            sb.append("评价数量：").append(item.getEvaluationCount()).append("条\n");
+        }
+        if (item.getAvgAttendanceRate() != null && item.getAvgAttendanceRate().compareTo(BigDecimal.ZERO) > 0) {
+            sb.append("平均出勤率：").append(item.getAvgAttendanceRate()).append("%\n");
+        }
+        if (Boolean.TRUE.equals(item.getHasMajorIncident())) {
+            sb.append("重大违纪：是\n");
+        }
+        if (CollUtil.isNotEmpty(item.getOccupationHistory())) {
+            sb.append("职位历史：").append(String.join("、", item.getOccupationHistory())).append("\n");
+        }
+
+        String result = sb.toString();
+        log.info("人才信息格式化完成，员工ID={}, 姓名={}, 信息长度={}字符",
+                employeeId, item.getName(), result.length());
+        return result;
+    }
+
+    @Override
+    public void updateCompareRecordAiResult(String taskId, String aiResult, User loginUser) {
+        if (taskId == null || StrUtil.isBlank(aiResult) || loginUser == null || loginUser.getCompanyId() == null) {
+            return;
+        }
+
+        try {
+            Long companyId = loginUser.getCompanyId();
+
+            // 查询该企业最近创建的对比记录（AI分析结果为空或未完成的）
+            // 由于任务ID格式为 ai_task_{companyId}_{timestamp}，我们可以通过时间戳匹配
+            QueryWrapper queryWrapper = QueryWrapper.create()
+                    .eq("company_id", companyId)
+                    .eq("is_delete", false)
+                    .isNull("ai_analysis_result")
+                    .orderBy("create_time", false)
+                    .limit(20); // 查询最近20条，提高匹配成功率
+
+            List<TalentCompareRecord> recentRecords = talentCompareRecordService.list(queryWrapper);
+
+            if (CollUtil.isEmpty(recentRecords)) {
+                log.warn("未找到需要更新AI分析结果的对比记录，任务ID={}, 企业ID={}", taskId, companyId);
+                return;
+            }
+
+            // 尝试通过任务ID中的时间戳匹配（任务ID格式：ai_task_{companyId}_{timestamp}）
+            TalentCompareRecord matchedRecord = null;
+            if (taskId.contains("_")) {
+                String[] parts = taskId.split("_");
+                if (parts.length >= 3) {
+                    try {
+                        long taskTimestamp = Long.parseLong(parts[parts.length - 1]);
+                        // 查找创建时间最接近任务时间戳的记录（误差在10分钟内）
+                        long minTimeDiff = Long.MAX_VALUE;
+                        for (TalentCompareRecord record : recentRecords) {
+                            if (record.getCreateTime() != null) {
+                                long recordTimestamp = record.getCreateTime()
+                                        .atZone(java.time.ZoneId.systemDefault())
+                                        .toInstant()
+                                        .toEpochMilli();
+                                long timeDiff = Math.abs(recordTimestamp - taskTimestamp);
+                                // 如果时间差在10分钟内，且是最接近的，认为是同一条记录
+                                if (timeDiff < 10 * 60 * 1000 && timeDiff < minTimeDiff) {
+                                    minTimeDiff = timeDiff;
+                                    matchedRecord = record;
+                                }
+                            }
+                        }
+                    } catch (NumberFormatException e) {
+                        log.warn("解析任务ID时间戳失败，任务ID={}", taskId);
+                    }
+                }
+            }
+
+            // 如果无法通过时间戳匹配，更新最近一条未完成的记录
+            if (matchedRecord == null && CollUtil.isNotEmpty(recentRecords)) {
+                matchedRecord = recentRecords.get(0);
+                log.info("通过时间戳无法匹配，使用最近一条记录，记录ID={}, 任务ID={}", matchedRecord.getId(), taskId);
+            }
+
+            if (matchedRecord != null) {
+                // 检查AI分析结果是否有效（如果为空或包含错误信息，视为失败）
+                boolean isAiAnalysisFailed = StrUtil.isBlank(aiResult) ||
+                        aiResult.toLowerCase().contains("error") ||
+                        aiResult.toLowerCase().contains("失败") ||
+                        aiResult.toLowerCase().contains("exception");
+
+                if (isAiAnalysisFailed) {
+                    log.warn("AI分析失败，任务ID={}, 记录ID={}, 结果：{}", taskId, matchedRecord.getId(), aiResult);
+
+                    // 返还积分：深度智能分析费用为 10x（x为对比人数）
+                    // 从employeeIds JSON中解析人数
+                    int employeeCount = 2; // 默认值
+                    try {
+                        if (StrUtil.isNotBlank(matchedRecord.getEmployeeIds())) {
+                            List<Long> employeeIdsList = JSONUtil.toList(matchedRecord.getEmployeeIds(), Long.class);
+                            if (CollUtil.isNotEmpty(employeeIdsList)) {
+                                employeeCount = employeeIdsList.size();
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("解析员工ID列表失败，使用默认值，记录ID={}", matchedRecord.getId());
+                    }
+
+                    BigDecimal refundAmount = BigDecimal.valueOf(10 * employeeCount);
+                    try {
+                        companyPointsService.addPoints(
+                                companyId,
+                                refundAmount,
+                                PointsChangeReasonEnum.RIGHTS_CONSUMPTION.getValue(),
+                                null,
+                                "深度智能分析失败，返还积分（" + employeeCount + "人对比）");
+                        log.info("AI分析失败，已返还积分，公司ID={}, 返还积分={}, 记录ID={}", companyId, refundAmount,
+                                matchedRecord.getId());
+                    } catch (Exception refundException) {
+                        log.error("返还积分失败，公司ID={}, 记录ID={}, 错误：{}", companyId, matchedRecord.getId(),
+                                refundException.getMessage(), refundException);
+                    }
+                } else {
+                    // AI分析成功，更新结果
+                    talentCompareRecordService.updateAiAnalysisResult(matchedRecord.getId(), aiResult);
+                    log.info("更新对比记录AI分析结果成功，记录ID={}, 任务ID={}", matchedRecord.getId(), taskId);
+                }
+            } else {
+                log.warn("未找到匹配的对比记录，任务ID={}, 企业ID={}", taskId, companyId);
+            }
+        } catch (Exception e) {
+            log.error("更新对比记录AI分析结果失败，任务ID={}, 错误：{}", taskId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public Page<TalentCompareRecordVO> getCompareHistory(long pageNum, long pageSize, User loginUser) {
+        ThrowUtils.throwIf(loginUser == null || loginUser.getCompanyId() == null,
+                ErrorCode.NO_AUTH_ERROR, "用户信息不完整");
+
+        Long companyId = loginUser.getCompanyId();
+        List<TalentCompareRecord> records = talentCompareRecordService.getLatestRecords(companyId,
+                (int) (pageNum * pageSize));
+
+        // 转换为VO
+        List<TalentCompareRecordVO> voList = new ArrayList<>();
+        for (TalentCompareRecord record : records) {
+            TalentCompareRecordVO vo = convertToCompareRecordVO(record);
+            if (vo != null) {
+                voList.add(vo);
+            }
+        }
+
+        // 手动分页
+        int start = (int) ((pageNum - 1) * pageSize);
+        int end = (int) Math.min(start + pageSize, voList.size());
+        List<TalentCompareRecordVO> pageList = start < voList.size()
+                ? voList.subList(start, end)
+                : new ArrayList<>();
+
+        Page<TalentCompareRecordVO> page = new Page<>(pageNum, pageSize, voList.size());
+        page.setRecords(pageList);
+        return page;
+    }
+
+    @Override
+    public TalentCompareRecordVO getCompareHistoryById(Long recordId, User loginUser) {
+        ThrowUtils.throwIf(recordId == null, ErrorCode.PARAMS_ERROR, "记录ID不能为空");
+        ThrowUtils.throwIf(loginUser == null || loginUser.getCompanyId() == null,
+                ErrorCode.NO_AUTH_ERROR, "用户信息不完整");
+
+        TalentCompareRecord record = talentCompareRecordService.getById(recordId);
+        ThrowUtils.throwIf(record == null, ErrorCode.NOT_FOUND_ERROR, "历史记录不存在");
+
+        // 验证记录是否属于当前企业
+        ThrowUtils.throwIf(!record.getCompanyId().equals(loginUser.getCompanyId()),
+                ErrorCode.NO_AUTH_ERROR, "无权访问该历史记录");
+
+        return convertToCompareRecordVO(record);
+    }
+
+    @Override
+    public TalentCompareRecordVO checkExistingCompare(TalentCompareRequest request, User loginUser) {
+        ThrowUtils.throwIf(request == null || CollUtil.isEmpty(request.getEmployeeIds()),
+                ErrorCode.PARAMS_ERROR, "员工ID列表不能为空");
+        ThrowUtils.throwIf(loginUser == null || loginUser.getCompanyId() == null,
+                ErrorCode.NO_AUTH_ERROR, "用户信息不完整");
+
+        Long companyId = loginUser.getCompanyId();
+        TalentCompareRecord existingRecord = talentCompareRecordService.findExistingRecord(
+                companyId, request.getEmployeeIds());
+
+        if (existingRecord != null) {
+            return convertToCompareRecordVO(existingRecord);
+        }
+        return null;
+    }
+
+    /**
+     * 转换对比记录实体为VO
+     */
+    private TalentCompareRecordVO convertToCompareRecordVO(TalentCompareRecord record) {
+        if (record == null) {
+            return null;
+        }
+
+        TalentCompareRecordVO vo = new TalentCompareRecordVO();
+        vo.setId(record.getId());
+        vo.setCompanyId(record.getCompanyId());
+        vo.setCreateTime(record.getCreateTime());
+        vo.setUpdateTime(record.getUpdateTime());
+        vo.setAiAnalysisResult(record.getAiAnalysisResult());
+
+        // 解析员工ID列表
+        try {
+            List<Long> employeeIds = JSONUtil.toList(record.getEmployeeIds(), Long.class);
+            vo.setEmployeeIds(employeeIds);
+
+            // 获取员工姓名列表
+            List<String> employeeNames = new ArrayList<>();
+            for (Long employeeId : employeeIds) {
+                Employee employee = employeeMapper.selectOneById(employeeId);
+                if (employee != null) {
+                    employeeNames.add(employee.getName());
+                } else {
+                    employeeNames.add("未知");
+                }
+            }
+            vo.setEmployeeNames(employeeNames);
+
+            // 解析对比结果
+            if (StrUtil.isNotBlank(record.getCompareResult())) {
+                try {
+                    TalentCompareVO compareVO = JSONUtil.toBean(record.getCompareResult(), TalentCompareVO.class);
+                    vo.setCompareResult(compareVO);
+                } catch (Exception e) {
+                    log.warn("解析对比结果失败，记录ID={}, 错误：{}", record.getId(), e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("解析员工ID列表失败，记录ID={}, 错误：{}", record.getId(), e.getMessage());
+        }
+
+        return vo;
     }
 }

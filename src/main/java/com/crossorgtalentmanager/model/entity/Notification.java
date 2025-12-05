@@ -66,3 +66,4 @@ public class Notification implements Serializable {
     @Column(isLogicDelete = true)
     private Boolean isDelete;
 }
+

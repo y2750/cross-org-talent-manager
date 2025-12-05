@@ -52,3 +52,4 @@ public enum NotificationTypeEnum {
         return getEnumByValue(value) != null;
     }
 }
+
