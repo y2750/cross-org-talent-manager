@@ -8,7 +8,9 @@ import com.crossorgtalentmanager.mapper.EvaluationTagMapper;
 import com.crossorgtalentmanager.service.EvaluationTagService;
 import com.crossorgtalentmanager.model.vo.EvaluationTagVO;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.Resource;
 
@@ -30,7 +32,7 @@ public class EvaluationTagServiceImpl extends ServiceImpl<EvaluationTagMapper, E
     private CacheManager cacheManager;
 
     @Override
-    @org.springframework.cache.annotation.Cacheable(value = "evaluationTags", key = "'active'")
+    @Cacheable(value = "evaluationTags", key = "'active'")
     public List<EvaluationTagVO> listActiveTags() {
         try {
             QueryWrapper queryWrapper = QueryWrapper.create()
@@ -45,7 +47,7 @@ public class EvaluationTagServiceImpl extends ServiceImpl<EvaluationTagMapper, E
             // 如果缓存数据格式不对（旧格式），清除缓存并重新查询
             log.warn("缓存数据格式错误，清除缓存并重新查询: {}", e.getMessage());
             if (cacheManager != null) {
-                org.springframework.cache.Cache cache = cacheManager.getCache("evaluationTags");
+                Cache cache = cacheManager.getCache("evaluationTags");
                 if (cache != null) {
                     cache.evict("active");
                 }
