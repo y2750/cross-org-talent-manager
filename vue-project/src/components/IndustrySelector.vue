@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { INDUSTRY_CATEGORIES } from '@/constants/industry'
+import { INDUSTRY_CATEGORIES, type IndustryCategory } from '@/constants/industry'
 
 interface Props {
   modelValue?: string[]
   placeholder?: string
   maxTagCount?: number
+  category?: string // 行业大类，如果提供则只显示该大类的子类
+  disabled?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: () => [],
   placeholder: '公司行业',
   maxTagCount: 3,
+  category: undefined,
+  disabled: false,
 })
 
 const emit = defineEmits<{
@@ -21,6 +25,7 @@ const emit = defineEmits<{
 
 const dropdownVisible = ref(false)
 const selectedIndustries = ref<string[]>([...props.modelValue])
+const expandedCategories = ref<Set<string>>(new Set()) // 记录展开的行业大类
 
 // 监听外部值变化
 watch(
@@ -29,6 +34,17 @@ watch(
     selectedIndustries.value = [...newValue]
   }
 )
+
+// 根据传入的 category 过滤显示的行业分类
+const displayedCategories = computed(() => {
+  if (props.category) {
+    // 如果指定了行业大类，只显示该大类的子类
+    const category = INDUSTRY_CATEGORIES.find((cat) => cat.value === props.category)
+    return category ? [category] : []
+  }
+  // 如果没有指定，显示所有大类
+  return INDUSTRY_CATEGORIES
+})
 
 // 切换选中状态
 const toggleIndustry = (industry: string) => {
@@ -45,6 +61,20 @@ const toggleIndustry = (industry: string) => {
 // 判断是否选中
 const isSelected = (industry: string) => {
   return selectedIndustries.value.includes(industry)
+}
+
+// 切换大类展开/收起
+const toggleCategory = (categoryValue: string) => {
+  if (expandedCategories.value.has(categoryValue)) {
+    expandedCategories.value.delete(categoryValue)
+  } else {
+    expandedCategories.value.add(categoryValue)
+  }
+}
+
+// 判断大类是否展开
+const isCategoryExpanded = (categoryValue: string) => {
+  return expandedCategories.value.has(categoryValue)
 }
 
 // 清空选择
@@ -75,7 +105,14 @@ const handleClickOutside = (event: MouseEvent) => {
 
 // 挂载和卸载事件监听
 const toggleDropdown = () => {
+  if (props.disabled) {
+    return
+  }
   dropdownVisible.value = !dropdownVisible.value
+  // 如果指定了行业大类，自动展开
+  if (dropdownVisible.value && props.category) {
+    expandedCategories.value.add(props.category)
+  }
 }
 
 // 监听下拉框状态
@@ -86,11 +123,21 @@ watch(dropdownVisible, (visible) => {
     document.removeEventListener('click', handleClickOutside)
   }
 })
+
+// 监听 category 变化，自动展开
+watch(
+  () => props.category,
+  (newCategory) => {
+    if (newCategory && dropdownVisible.value) {
+      expandedCategories.value.add(newCategory)
+    }
+  }
+)
 </script>
 
 <template>
-  <div class="industry-selector">
-    <div class="current-select" @click="toggleDropdown">
+  <div class="industry-selector" :class="{ disabled: disabled }">
+    <div class="current-select" @click="toggleDropdown" :class="{ disabled: disabled }">
       <span :class="{ 'placeholder-text': selectedIndustries.length === 0, 'selected-text': selectedIndustries.length > 0 }">
         {{ displayText }}
       </span>
@@ -101,9 +148,18 @@ watch(dropdownVisible, (visible) => {
 
     <div v-show="dropdownVisible" class="filter-select-dropdown">
       <ul>
-        <li v-for="category in INDUSTRY_CATEGORIES" :key="category.value" class="category-item">
-          <span class="label">{{ category.label }}</span>
-          <div class="select-list">
+        <li v-for="category in displayedCategories" :key="category.value" class="category-item">
+          <div class="category-header" @click="toggleCategory(category.value)">
+            <span class="label">{{ category.label }}</span>
+            <span class="expand-icon" :class="{ expanded: isCategoryExpanded(category.value) }">
+              ▼
+            </span>
+          </div>
+          <div
+            class="select-list"
+            :class="{ expanded: isCategoryExpanded(category.value) }"
+            v-show="isCategoryExpanded(category.value)"
+          >
             <a
               v-for="subCategory in category.children"
               :key="subCategory.value"
@@ -140,8 +196,18 @@ watch(dropdownVisible, (visible) => {
   min-height: 32px;
 }
 
-.current-select:hover {
+.current-select:hover:not(.disabled) {
   border-color: #4096ff;
+}
+
+.current-select.disabled {
+  cursor: not-allowed;
+  background-color: #f5f5f5;
+  color: #bfbfbf;
+}
+
+.industry-selector.disabled .placeholder-text {
+  color: #bfbfbf;
 }
 
 .placeholder-text {
@@ -188,7 +254,7 @@ watch(dropdownVisible, (visible) => {
 }
 
 .category-item {
-  padding: 8px 16px;
+  padding: 0;
   border-bottom: 1px solid #f0f0f0;
 }
 
@@ -196,18 +262,50 @@ watch(dropdownVisible, (visible) => {
   border-bottom: none;
 }
 
+.category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  user-select: none;
+}
+
+.category-header:hover {
+  background-color: #fafafa;
+}
+
 .label {
-  display: block;
   font-weight: 600;
   font-size: 14px;
   color: #000000d9;
-  margin-bottom: 8px;
+}
+
+.expand-icon {
+  font-size: 12px;
+  color: #8c8c8c;
+  transition: transform 0.3s;
+  transform: rotate(-90deg);
+}
+
+.expand-icon.expanded {
+  transform: rotate(0deg);
 }
 
 .select-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 0 16px 12px 16px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+}
+
+.select-list.expanded {
+  max-height: 500px;
+  padding: 0 16px 12px 16px;
 }
 
 .select-list a {

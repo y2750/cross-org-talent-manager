@@ -53,5 +53,3 @@ public class CompanyPreferenceRequest implements Serializable {
      */
     private String requirementDescription;
 }
-
-

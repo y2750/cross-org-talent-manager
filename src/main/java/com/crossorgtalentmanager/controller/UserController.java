@@ -10,6 +10,7 @@ import com.crossorgtalentmanager.exception.BusinessException;
 import com.crossorgtalentmanager.exception.ErrorCode;
 import com.crossorgtalentmanager.exception.ThrowUtils;
 import com.mybatisflex.core.paginate.Page;
+import com.mybatisflex.core.query.QueryWrapper;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import com.crossorgtalentmanager.model.dto.user.UserLoginRequest;
@@ -116,6 +117,16 @@ public class UserController {
         BaseResponse<User> response = getUserById(id);
         User user = response.getData();
         return ResultUtils.success(userService.getUserVO(user));
+    }
+
+    /**
+     * 检查账号名是否已存在
+     */
+    @GetMapping("/check/username")
+    public BaseResponse<Boolean> checkUsername(String username) {
+        ThrowUtils.throwIf(username == null || username.isBlank(), ErrorCode.PARAMS_ERROR, "账号名不能为空");
+        Long count = userService.count(QueryWrapper.create().eq("username", username));
+        return ResultUtils.success(count != null && count > 0);
     }
 
     /**

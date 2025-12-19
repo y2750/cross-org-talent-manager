@@ -10,6 +10,7 @@ import * as userController from './userController'
 import * as employeeController from './employeeController'
 import * as notificationController from './notificationController'
 import * as complaintController from './complaintController'
+import * as companyRegistrationController from './companyRegistrationController'
 import * as talentMarketController from './talentMarketController'
 import * as contactAccessRequestController from './contactAccessRequestController'
 export default {
@@ -23,4 +24,5 @@ export default {
   complaintController,
   talentMarketController,
   contactAccessRequestController,
+  companyRegistrationController,
 }

@@ -49,6 +49,10 @@ const handleReset = () => {
   formState.username = ''
   formState.password = ''
 }
+
+const handleGoRegister = () => {
+  router.push('/register-company')
+}
 </script>
 
 <template>
@@ -84,6 +88,12 @@ const handleReset = () => {
 
         <a-form-item>
           <a-button block size="large" @click="handleReset"> 重置 </a-button>
+        </a-form-item>
+
+        <a-form-item>
+          <a-button type="link" block size="large" @click="handleGoRegister">
+            注册企业
+          </a-button>
         </a-form-item>
       </a-form>
 

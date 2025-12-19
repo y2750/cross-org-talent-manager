@@ -135,13 +135,13 @@ const canHandle = computed(() => {
     return false
   }
   const type = notification.value.type
-  // 1=评价任务，2=查阅请求，3=系统通知，4=投诉处理
+  // 1=评价任务，2=查阅请求，3=系统通知，4=投诉处理，5=企业注册申请
   // 对于查阅请求（type=2），如果是联系方式查看请求的结果通知，可以跳转
   if (type === 2) {
     // 如果是审批结果通知，可以跳转
     return notification.value.title && notification.value.title.includes('结果通知')
   }
-  return type === 1 || type === 4
+  return type === 1 || type === 4 || type === 5
 })
 
 // 是否是联系方式查看请求通知
@@ -311,6 +311,9 @@ const handleGoToAction = () => {
     } else if (type === 4) {
       // 投诉处理 - 跳转到投诉处理页面
       router.push('/complaints/management')
+    } else if (type === 5) {
+      // 企业注册申请 - 跳转到企业注册申请审批页面
+      router.push('/company/registration/requests')
     } else {
       message.warning('该通知类型暂不支持跳转')
     }

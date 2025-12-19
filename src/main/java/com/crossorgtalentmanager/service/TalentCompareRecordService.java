@@ -44,7 +44,7 @@ public interface TalentCompareRecordService extends IService<TalentCompareRecord
      * 检查是否存在相同的对比记录（相同的员工ID组合）
      *
      * @param companyId   企业ID
-     * @param employeeIds  员工ID列表
+     * @param employeeIds 员工ID列表
      * @return 如果存在返回记录，否则返回null
      */
     TalentCompareRecord findExistingRecord(Long companyId, List<Long> employeeIds);
@@ -59,4 +59,3 @@ public interface TalentCompareRecordService extends IService<TalentCompareRecord
      */
     List<TalentCompareRecord> findRelatedHistoryRecords(Long companyId, List<Long> employeeIds);
 }
-

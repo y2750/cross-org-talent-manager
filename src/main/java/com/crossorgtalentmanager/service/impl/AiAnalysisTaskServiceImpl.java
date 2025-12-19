@@ -19,16 +19,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @Service
 public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
-    
+
     @Resource
     private AiTalentComparisonService aiTalentComparisonService;
-    
+
     // 任务状态和结果缓存（key: taskId, value: TaskInfo）
     private final ConcurrentHashMap<String, TaskInfo> taskCache = new ConcurrentHashMap<>();
-    
+
     // 用于清理任务的线程池
     private final ScheduledExecutorService cleanupExecutor = Executors.newScheduledThreadPool(1);
-    
+
     // AI任务执行线程池（专门用于执行AI分析任务，避免阻塞）
     // 核心线程数：10，最大线程数：50，队列大小：100
     // 这样可以支持多个AI任务并发执行，不会互相阻塞
@@ -39,6 +39,7 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
             new LinkedBlockingQueue<>(100), // 任务队列
             new ThreadFactory() {
                 private int counter = 0;
+
                 @Override
                 public Thread newThread(Runnable r) {
                     Thread thread = new Thread(r, "ai-task-executor-" + (++counter));
@@ -48,37 +49,37 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
             },
             new ThreadPoolExecutor.CallerRunsPolicy() // 拒绝策略：调用者运行
     );
-    
+
     // 任务信息内部类
     private static class TaskInfo {
         String status; // processing, completed, failed
         String result;
         String error;
         long createTime;
-        
+
         TaskInfo() {
             this.status = "processing";
             this.createTime = System.currentTimeMillis();
         }
     }
-    
+
     @Override
     public String submitTask(Long companyId, List<Long> employeeIds, String inputData) {
         // 生成任务ID（基于公司ID和员工ID列表）
         String taskId = generateTaskId(companyId, employeeIds);
-        
+
         // 创建任务信息
         TaskInfo taskInfo = new TaskInfo();
         taskCache.put(taskId, taskInfo);
-        
+
         log.info("提交AI分析任务，任务ID={}, 公司ID={}, 员工数量={}", taskId, companyId, employeeIds.size());
-        
+
         // 异步执行AI分析（使用专门的线程池，避免阻塞）
         CompletableFuture.runAsync(() -> {
             try {
                 log.info("开始执行AI分析任务，任务ID={}", taskId);
                 String aiResult = aiTalentComparisonService.compareTalents(inputData);
-                
+
                 if (aiResult != null && !aiResult.trim().isEmpty()) {
                     taskInfo.status = "completed";
                     taskInfo.result = aiResult;
@@ -100,10 +101,10 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
                 }, 30, TimeUnit.MINUTES);
             }
         }, aiTaskExecutor); // 使用专门的线程池执行，避免使用共享的ForkJoinPool
-        
+
         return taskId;
     }
-    
+
     @Override
     public String getTaskStatus(String taskId) {
         TaskInfo taskInfo = taskCache.get(taskId);
@@ -112,7 +113,7 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
         }
         return taskInfo.status;
     }
-    
+
     @Override
     public String getTaskResult(String taskId) {
         TaskInfo taskInfo = taskCache.get(taskId);
@@ -121,7 +122,7 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
         }
         return taskInfo.result;
     }
-    
+
     @Override
     public String getTaskError(String taskId) {
         TaskInfo taskInfo = taskCache.get(taskId);
@@ -130,7 +131,7 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
         }
         return taskInfo.error;
     }
-    
+
     /**
      * 生成任务ID
      */
@@ -141,4 +142,3 @@ public class AiAnalysisTaskServiceImpl implements AiAnalysisTaskService {
         return "ai_task_" + Math.abs(key.hashCode()) + "_" + System.currentTimeMillis();
     }
 }
-

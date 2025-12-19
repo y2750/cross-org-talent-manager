@@ -55,6 +55,12 @@
                 </a-badge>
                 <span v-else>投诉处理</span>
               </a-menu-item>
+              <a-menu-item v-if="isSystemAdmin" key="companyRegistration">
+                <a-badge v-if="pendingRegistrationCount > 0" :count="pendingRegistrationCount" :number-style="{ backgroundColor: '#ff4d4f', fontSize: '10px', minWidth: '14px', height: '14px', lineHeight: '14px' }" class="menu-badge">
+                  <span>企业注册申请</span>
+                </a-badge>
+                <span v-else>企业注册申请</span>
+              </a-menu-item>
             </template>
           </a-menu>
         </div>
@@ -80,6 +86,7 @@ import { useUserStore } from '@/stores/userStore'
 import * as evaluationTaskController from '@/api/evaluationTaskController'
 import * as profileAccessRequestController from '@/api/profileAccessRequestController'
 import * as complaintController from '@/api/complaintController'
+import * as companyRegistrationController from '@/api/companyRegistrationController'
 
 const router = useRouter()
 const route = useRoute()
@@ -91,6 +98,8 @@ const pendingCount = ref(0)
 const profileAccessRequestCount = ref(0)
 // 未处理投诉数量
 const pendingComplaintCount = ref(0)
+// 待处理企业注册申请数量
+const pendingRegistrationCount = ref(0)
 let refreshTimer: number | null = null
 
 // 刷新待评价数量
@@ -149,6 +158,25 @@ const refreshPendingComplaintCount = async () => {
   }
 }
 
+// 刷新待处理企业注册申请数量
+const refreshPendingRegistrationCount = async () => {
+  if (!userStore.userRole || userStore.userRole !== 'admin') {
+    return
+  }
+  try {
+    const response = await companyRegistrationController.listCompanyRegistrationPage({
+      pageNum: 1,
+      pageSize: 1,
+      status: 0, // 待处理状态
+    })
+    if (response?.data?.code === 0 && response.data.data) {
+      pendingRegistrationCount.value = response.data.data.totalRow || 0
+    }
+  } catch (error) {
+    console.error('Failed to refresh pending registration count:', error)
+  }
+}
+
 const isSystemAdmin = computed(() => userStore.userRole === 'admin')
 const isCompanyAdmin = computed(() =>
   ['employee_admin', 'company_admin', 'companyAdmin'].includes(userStore.userRole),
@@ -163,13 +191,14 @@ const canAccessCompanyDetail = computed(() => {
 })
 const canAccessTalentMarket = computed(() => isSystemAdmin.value || isCompanyAdmin.value || isHR.value)
 const userManagementLabel = computed(() => (isCompanyAdmin.value ? 'HR管理' : '用户管理'))
-const isLoginPage = computed(() => route.path === '/login')
+const isLoginPage = computed(() => route.path === '/login' || route.path === '/register-company')
+const isRegisterCompanyPage = computed(() => route.path === '/register-company')
 const isCompanyDetailPage = computed(() => route.path.startsWith('/companies/') && route.params.id)
 const isEmployeeProfilePage = computed(() => route.path.startsWith('/employees/') && route.name === 'employeeProfile')
 const isDepartmentDetailPage = computed(() => route.path.startsWith('/departments/') && route.params.id)
 const isTalentMarketDetailPage = computed(() => route.path.startsWith('/talent-market/detail/'))
 const isTalentComparePage = computed(() => route.path === '/talent-market/compare')
-const shouldHideMainMenu = computed(() => isCompanyDetailPage.value || isEmployeeProfilePage.value || isDepartmentDetailPage.value || isTalentMarketDetailPage.value || isTalentComparePage.value)
+const shouldHideMainMenu = computed(() => isRegisterCompanyPage.value || isCompanyDetailPage.value || isEmployeeProfilePage.value || isDepartmentDetailPage.value || isTalentMarketDetailPage.value || isTalentComparePage.value)
 
 const handleSiderClick = (e: any) => {
   if (e.key === 'companyDetail') {
@@ -196,6 +225,7 @@ const handleSiderClick = (e: any) => {
     myEvaluation: '/evaluation/my',
     createQuarterlyEvaluation: '/evaluation/create-quarterly',
     complaintManagement: '/complaints/management',
+    companyRegistration: '/company/registration/requests',
   }
   const path = map[e.key]
   if (path) router.push(path)
@@ -222,9 +252,10 @@ onMounted(() => {
     refreshProfileAccessRequestCount()
   }
   
-  // 只有系统管理员才需要显示未处理投诉数量
+  // 只有系统管理员才需要显示未处理投诉数量和企业注册申请数量
   if (isSystemAdmin.value) {
     refreshPendingComplaintCount()
+    refreshPendingRegistrationCount()
   }
   
   // 设置定时器，每30秒刷新一次
@@ -238,6 +269,7 @@ onMounted(() => {
       }
       if (isSystemAdmin.value) {
         refreshPendingComplaintCount()
+        refreshPendingRegistrationCount()
       }
     }, 30000)
   }

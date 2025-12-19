@@ -3,9 +3,14 @@ import { useUserStore } from '@/stores/userStore'
 import HomeView from '../views/HomeView.vue'
 
 // 不需要登录的页面
-const publicPages = new Set(['/login', '/diagnostic'])
+const publicPages = new Set(['/login', '/diagnostic', '/register-company'])
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/register-company',
+    name: 'companyRegistrationApply',
+    component: () => import('../views/CompanyRegistrationApplyView.vue'),
+  },
   {
     path: '/login',
     name: 'login',
@@ -134,6 +139,12 @@ const routes: RouteRecordRaw[] = [
     path: '/complaints/management',
     name: 'complaintManagement',
     component: () => import('../views/ComplaintManagementView.vue'),
+    meta: { requiresAuth: true, roles: ['admin'] },
+  },
+  {
+    path: '/company/registration/requests',
+    name: 'companyRegistrationApproval',
+    component: () => import('../views/CompanyRegistrationApprovalView.vue'),
     meta: { requiresAuth: true, roles: ['admin'] },
   },
   {

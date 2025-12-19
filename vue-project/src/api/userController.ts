@@ -113,3 +113,17 @@ export async function updateUser(body: API.UserUpdateRequest, options?: { [key: 
     ...(options || {}),
   })
 }
+
+/** 检查账号名是否已存在 GET /user/check/username */
+export async function checkUsername(
+  params: { username: string },
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseBoolean>('/user/check/username', {
+    method: 'GET',
+    params: {
+      ...params,
+    },
+    ...(options || {}),
+  })
+}

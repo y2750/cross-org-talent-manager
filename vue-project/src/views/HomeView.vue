@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons-vue'
 import * as notificationController from '@/api/notificationController'
 import * as evaluationTaskController from '@/api/evaluationTaskController'
+import * as companyRegistrationController from '@/api/companyRegistrationController'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -27,12 +28,13 @@ const roleHelpers = useRole()
 // 统计数据
 const unreadNotificationCount = ref(0)
 const pendingTaskCount = ref(0)
+const pendingRegistrationCount = ref(0)
 const loading = ref(false)
 
 // 角色检查（直接使用 userStore 的 computed 属性，它们已经是 computed 了）
-const isSystemAdmin = userStore.isSystemAdmin
-const isCompanyAdmin = userStore.isCompanyAdmin
-const isHR = userStore.isHR
+const isSystemAdmin = computed(() => userStore.isSystemAdmin)
+const isCompanyAdmin = computed(() => userStore.isCompanyAdmin)
+const isHR = computed(() => userStore.isHR)
 // 只有 employee 角色才是员工，严格限制，只允许 employee 角色
 const isEmployee = computed(() => {
   const role = userStore.userRole
@@ -70,6 +72,27 @@ const loadPendingCount = async () => {
       return
     }
     console.error('Failed to load pending count:', error)
+  }
+}
+
+// 获取待处理企业注册申请数量
+const loadPendingRegistrationCount = async () => {
+  // 只有系统管理员才能查看企业注册申请
+  if (userStore.userRole !== 'admin') {
+    return
+  }
+  
+  try {
+    const response = await companyRegistrationController.listCompanyRegistrationPage({
+      pageNum: 1,
+      pageSize: 1,
+      status: 0, // 待处理状态
+    })
+    if (response?.data?.code === 0 && response.data.data) {
+      pendingRegistrationCount.value = response.data.data.totalRow || 0
+    }
+  } catch (error) {
+    console.error('Failed to load pending registration count:', error)
   }
 }
 
@@ -168,6 +191,18 @@ const quickLinks = computed(() => {
     })
   }
 
+  // 企业注册申请（仅系统管理员可见）
+  if (isSysAdmin) {
+    links.push({
+      title: '企业注册申请',
+      icon: BankOutlined,
+      path: '/company/registration/requests',
+      color: '#1890ff',
+      badge: pendingRegistrationCount.value > 0 ? pendingRegistrationCount.value : undefined,
+      visible: true,
+    })
+  }
+
   // 人才市场（HR、公司管理员、系统管理员可见）
   if (isHr || isCompAdmin || isSysAdmin) {
     links.push({
@@ -238,7 +273,11 @@ const roleText = computed(() => {
 
 onMounted(async () => {
   loading.value = true
-  await Promise.all([loadUnreadCount(), loadPendingCount()])
+  await Promise.all([
+    loadUnreadCount(),
+    loadPendingCount(),
+    loadPendingRegistrationCount(),
+  ])
   loading.value = false
 })
 </script>

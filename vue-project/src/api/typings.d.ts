@@ -1042,6 +1042,69 @@ declare namespace API {
     message?: string
   }
 
+  // 企业注册申请相关类型
+  type CompanyRegistrationAddRequest = {
+    companyName?: string
+    address?: string
+    companyEmail?: string
+    adminName?: string
+    adminPhone?: string
+    adminEmail?: string
+    adminIdNumber?: string
+    industryCategory?: string
+    industries?: string[]
+    proofImages?: string[]
+  }
+
+  type CompanyRegistrationApproveRequest = {
+    id?: number
+    approved?: boolean
+    rejectReason?: string
+  }
+
+  type CompanyRegistrationQueryRequest = {
+    id?: number
+    companyName?: string
+    status?: number
+    pageNum?: number
+    pageSize?: number
+    sortField?: string
+    sortOrder?: string
+  }
+
+  type CompanyRegistrationRequestVO = {
+    id?: number
+    companyName?: string
+    address?: string
+    companyEmail?: string
+    adminName?: string
+    adminPhone?: string
+    adminEmail?: string
+    adminIdNumber?: string
+    industryCategory?: string
+    industries?: string[]
+    proofImages?: string[]
+    status?: number
+    statusText?: string
+    rejectReason?: string
+    createTime?: string
+    updateTime?: string
+  }
+
+  type PageCompanyRegistrationRequestVO = {
+    records?: CompanyRegistrationRequestVO[]
+    totalRow?: number
+    pageNumber?: number
+    pageSize?: number
+    totalPage?: number
+  }
+
+  type BaseResponsePageCompanyRegistrationRequestVO = {
+    code?: number
+    data?: PageCompanyRegistrationRequestVO
+    message?: string
+  }
+
   type BaseResponseListString = {
     code?: number
     data?: string[]

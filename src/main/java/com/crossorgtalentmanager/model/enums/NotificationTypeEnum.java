@@ -26,7 +26,12 @@ public enum NotificationTypeEnum {
     /**
      * 投诉处理
      */
-    COMPLAINT(4, "投诉处理");
+    COMPLAINT(4, "投诉处理"),
+
+    /**
+     * 企业注册申请
+     */
+    COMPANY_REGISTRATION(5, "企业注册申请");
 
     private final Integer value;
     private final String text;
