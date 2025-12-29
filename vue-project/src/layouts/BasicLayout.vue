@@ -189,7 +189,7 @@ const canAccessCompanyDetail = computed(() => {
   // company_admin 和 hr 可以访问自己的公司详情页面
   return (isCompanyAdmin.value || isHR.value) && userStore.userInfo?.companyId
 })
-const canAccessTalentMarket = computed(() => isSystemAdmin.value || isCompanyAdmin.value || isHR.value)
+const canAccessTalentMarket = computed(() => isCompanyAdmin.value || isHR.value)
 const userManagementLabel = computed(() => (isCompanyAdmin.value ? 'HR管理' : '用户管理'))
 const isLoginPage = computed(() => route.path === '/login' || route.path === '/register-company')
 const isRegisterCompanyPage = computed(() => route.path === '/register-company')

@@ -12,3 +12,8 @@ public interface CompanyRegistrationRequestMapper extends BaseMapper<CompanyRegi
 
 
 
+
+
+
+
+

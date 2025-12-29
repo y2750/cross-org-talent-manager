@@ -203,8 +203,8 @@ const quickLinks = computed(() => {
     })
   }
 
-  // 人才市场（HR、公司管理员、系统管理员可见）
-  if (isHr || isCompAdmin || isSysAdmin) {
+  // 人才市场（HR、公司管理员可见）
+  if (isHr || isCompAdmin) {
     links.push({
       title: '人才市场',
       icon: SearchOutlined,

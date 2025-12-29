@@ -151,19 +151,19 @@ const routes: RouteRecordRaw[] = [
     path: '/talent-market',
     name: 'talentMarket',
     component: () => import('../views/TalentMarketView.vue'),
-    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+    meta: { requiresAuth: true, roles: ['company_admin', 'hr'] },
   },
   {
     path: '/talent-market/detail/:employeeId',
     name: 'talentMarketDetail',
     component: () => import('../views/TalentMarketDetailView.vue'),
-    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+    meta: { requiresAuth: true, roles: ['company_admin', 'hr'] },
   },
   {
     path: '/talent-market/compare',
     name: 'talentCompare',
     component: () => import('../views/TalentCompareView.vue'),
-    meta: { requiresAuth: true, roles: ['admin', 'company_admin', 'hr'] },
+    meta: { requiresAuth: true, roles: ['company_admin', 'hr'] },
   },
 ]
 
