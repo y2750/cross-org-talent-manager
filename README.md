@@ -181,10 +181,8 @@ cd cross-org-talent-manager
 CREATE DATABASE cross_org_talent_manager CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-2. 执行数据库脚本（按顺序执行）：
-   - `sql.sql` - 基础表结构
+2. 执行数据库脚本：
    - `cross_org_talent_manager.sql` - 完整数据库结构
-   - 其他升级脚本（如需要）
 
 ### 3. 后端配置
 
@@ -425,6 +423,9 @@ server {
 ---
 
 **注意**：本项目仍在持续开发中，部分功能可能尚未完善。使用前请仔细阅读文档并做好数据备份。
+
+
+
 
 
 

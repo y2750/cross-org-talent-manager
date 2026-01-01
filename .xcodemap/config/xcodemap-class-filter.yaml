@@ -1,9 +1,7 @@
+autoDeleteData: false
 autoDetectedPackages:
 - com.crossorgtalentmanager
-- model.dto.user
-- model.entity
-- model.enums
-- model.vo
+autoKeepDataNum: 10
 enableAutoDetect: true
 entryDisplayConfig:
   excludedPathPatterns: []
@@ -20,7 +18,15 @@ ignoreSameClassCall: null
 ignoreSamePackageCall: null
 includedPackagePrefixes: null
 includedParentClasses: null
+maxColSize: 32
+maxNumFirst: 12
+maxNumFirstImportant: 1024
+maxNumHash: 3
+maxNumHashImportant: 256
+maxObjectDepth: 4
+maxStrSize: 4096
 name: xcodemap-filter
+openMainWindow: true
 recordMode: all
 sourceDisplayConfig:
   color: blue
