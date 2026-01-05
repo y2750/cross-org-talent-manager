@@ -419,23 +419,11 @@ const startCompare = async () => {
     return
   }
   
-  // 计算积分消耗：10x，x为对比人数（测试阶段设为0）
+  // 计算积分消耗：10x，x为对比人数
   const compareCount = selectedTalents.value.length
-  const cost = 0 // 测试阶段设为0，正式环境改为：10 * compareCount
+  const cost = 10 * compareCount
   
-  // 测试阶段跳过积分检查和提示，直接跳转
-  if (cost === 0) {
-    router.push({
-      path: '/talent-market/compare',
-      query: { 
-        ids: selectedTalents.value.join(','),
-        forceRefresh: 'true', // 标记为强制刷新，跳过历史记录检查，直接重新分析
-      },
-    })
-    return
-  }
-  
-  // 正式环境：获取当前积分并检查
+  // 获取当前积分并检查
   try {
     const pointsRes = await companyController.getCompanyPoints({})
     const currentPoints = pointsRes?.data?.data ? Number(pointsRes.data.data) : 0

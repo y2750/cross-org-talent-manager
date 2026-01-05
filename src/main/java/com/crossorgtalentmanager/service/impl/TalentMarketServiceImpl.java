@@ -2032,11 +2032,11 @@ public class TalentMarketServiceImpl implements TalentMarketService {
         compareVO.setItems(items);
         compareVO.setDimensionRadarData(dimensionRadarData);
 
-        // 深度智能分析需要扣除积分：10x，x为对比人数（测试阶段设为0）
-        BigDecimal compareCost = BigDecimal.valueOf(0); // 测试阶段设为0，正式环境改为：10 * employeeIds.size()
+        // 深度智能分析需要扣除积分：10x，x为对比人数
+        BigDecimal compareCost = BigDecimal.valueOf(10 * employeeIds.size());
         Long pointsRecordId = null; // 保存积分扣除记录ID，以便失败时返还
 
-        // 检查积分是否足够（测试阶段跳过检查）
+        // 检查积分是否足够
         if (compareCost.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal currentPoints = companyPointsService.getTotalPoints(companyId);
             ThrowUtils.throwIf(currentPoints.compareTo(compareCost) < 0,
@@ -2056,8 +2056,6 @@ public class TalentMarketServiceImpl implements TalentMarketService {
                 log.error("扣除深度智能分析积分失败，公司ID={}, 错误：{}", companyId, e.getMessage(), e);
                 throw new BusinessException(ErrorCode.OPERATION_ERROR, "扣除积分失败：" + e.getMessage());
             }
-        } else {
-            log.info("深度智能分析测试模式，不扣除积分，公司ID={}, 对比人数={}", companyId, employeeIds.size());
         }
 
         // 先返回基础数据，AI分析异步执行
